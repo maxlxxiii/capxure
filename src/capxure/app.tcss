@@ -1,0 +1,33 @@
+Screen {
+    background: $background;
+}
+
+#status-bar {
+    dock: top;
+    height: 1;
+    background: $surface;
+    color: $primary;
+    padding: 0 1;
+}
+
+#log {
+    height: 1fr;
+    background: $background;
+    color: $foreground;
+    padding: 0 1;
+    scrollbar-color: $primary;
+    scrollbar-color-hover: $secondary;
+    scrollbar-color-active: $accent;
+}
+
+#url-input {
+    dock: bottom;
+    height: 3;
+    background: $surface;
+    color: $primary;
+    border: tall $primary;
+}
+
+#url-input:focus {
+    border: tall $secondary;
+}
