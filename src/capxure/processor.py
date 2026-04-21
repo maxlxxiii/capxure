@@ -1,8 +1,7 @@
-"""Core orchestrator. No TUI dependencies.
+"""Core orchestrator.
 
 Coordinates GitHub API calls and local storage operations.
-Accepts a callback for status reporting so the TUI (or any other
-consumer) can display progress.
+Accepts a StatusCallback so consumers can surface progress.
 """
 
 from __future__ import annotations
@@ -81,10 +80,10 @@ async def process_repo(
         on_status(msg, Severity.ERROR)
         return ProcessResult(owner=owner, repo=repo, outcome=None, error=msg)
     except AuthenticationError:
-        msg = "Authentication failed — check GITHUB_TOKEN in .env"
+        msg = "Authentication failed — invalid or missing GITHUB_TOKEN"
         on_status(msg, Severity.ERROR)
         return ProcessResult(owner=owner, repo=repo, outcome=None, error=msg)
-    except (GitHubError, Exception) as exc:
+    except Exception as exc:
         msg = f"Error fetching {owner}/{repo}: {exc}"
         on_status(msg, Severity.ERROR)
         return ProcessResult(owner=owner, repo=repo, outcome=None, error=msg)
