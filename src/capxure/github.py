@@ -1,11 +1,20 @@
-"""GitHub API client. No TUI dependencies."""
+"""GitHub API client."""
 
 from __future__ import annotations
 
+import importlib.metadata
 import re
 from dataclasses import dataclass
 
 import httpx
+
+
+try:
+    _VERSION = importlib.metadata.version("capxure")
+except importlib.metadata.PackageNotFoundError:
+    _VERSION = "unknown"
+
+_USER_AGENT = f"capxure/{_VERSION}"
 
 
 # ── Exceptions ────────────────────────────────────────────────
@@ -79,7 +88,7 @@ class GitHubClient:
             headers={
                 "Authorization": f"token {self._token}",
                 "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "capxure/0.1",
+                "User-Agent": _USER_AGENT,
             },
             timeout=30.0,
         )
