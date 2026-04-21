@@ -14,7 +14,6 @@ from typing import Protocol
 from capxure.github import (
     AuthenticationError,
     GitHubClient,
-    GitHubError,
     NotFoundError,
     RateLimitExceededError,
     parse_github_url,
