@@ -40,4 +40,4 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Captured metadata goes to `data/metadata.json`; README files go to `data/readmes/{owner}--{repo}.md`. Pass a custom `Path` to `Storage(data_dir=...)` to change the location.
+Library consumers should pass an explicit `data_dir` to `Storage(data_dir=Path(...))` — that's the clean contract for embedding capxure in other tools. When `Storage()` is called with no argument, the default resolves via, in order: `$CAPXURE_DATA_DIR`, then `platformdirs.user_data_dir("capxure")` (e.g. `~/.local/share/capxure` on Linux, `~/Library/Application Support/capxure` on macOS). Inside that directory, metadata goes to `metadata.json` and READMEs to `readmes/{owner}--{repo}.md`.
