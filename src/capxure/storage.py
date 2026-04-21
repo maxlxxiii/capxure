@@ -1,8 +1,9 @@
-"""Local storage for metadata and READMEs. No TUI dependencies."""
+"""Local filesystem persistence for repo metadata and READMEs."""
 
 from __future__ import annotations
 
 import json
+import os
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -17,13 +18,47 @@ class DeduplicationResult(StrEnum):
     LOCAL_IS_NEWER = "local_is_newer"
 
 
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+def _resolve_default_data_dir() -> Path:
+    """Resolve the default data directory per the project principle.
+
+    Order:
+      1. $CAPXURE_DATA_DIR environment variable (if set and non-empty)
+      2. platformdirs.user_data_dir("capxure")
+      3. RuntimeError if neither yields a usable path
+    """
+    env = os.environ.get("CAPXURE_DATA_DIR", "").strip()
+    if env:
+        return Path(env)
+    from platformdirs import user_data_dir
+    resolved = user_data_dir("capxure")
+    if resolved:
+        return Path(resolved)
+    raise RuntimeError(
+        "Cannot resolve default data dir: set $CAPXURE_DATA_DIR "
+        "or ensure platformdirs is working"
+    )
 
 
 class Storage:
     """Manages metadata.json and readme files on disk."""
 
-    def __init__(self, data_dir: Path = DEFAULT_DATA_DIR) -> None:
+    def __init__(self, data_dir: Path | None = None) -> None:
+        """Initialize storage at a data directory.
+
+        Args:
+            data_dir: Where to store metadata.json and readmes/.
+                Library consumers (e.g., future CLI, Cortex integration,
+                custom scripts) should pass an explicit Path — this is the
+                clean contract for embedding capxure in other tools.
+
+                The no-argument default is intended for CLI/TUI end-users
+                and resolves via, in order:
+                  1. $CAPXURE_DATA_DIR environment variable
+                  2. platformdirs.user_data_dir("capxure")
+                  3. RuntimeError if neither is usable
+        """
+        if data_dir is None:
+            data_dir = _resolve_default_data_dir()
         self._data_dir = data_dir
         self._metadata_path = data_dir / "metadata.json"
         self._readmes_dir = data_dir / "readmes"
