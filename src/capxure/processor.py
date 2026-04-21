@@ -18,7 +18,6 @@ from capxure.github import (
     GitHubError,
     NotFoundError,
     RateLimitExceededError,
-    RateLimitInfo,
     parse_github_url,
 )
 from capxure.storage import DeduplicationResult, Storage
@@ -122,8 +121,3 @@ async def process_repo(
         on_status(f"{owner}/{repo}: updated to latest version", Severity.SUCCESS)
 
     return ProcessResult(owner=owner, repo=repo, outcome=result)
-
-
-async def fetch_rate_limit(github: GitHubClient) -> RateLimitInfo:
-    """Fetch current rate limit info."""
-    return await github.fetch_rate_limit()
