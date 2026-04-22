@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from capxure.storage import DuplicateRepoNameError, Storage, UpsertOutcome
+from capxure.storage import DuplicateRepoNameError, Repo, Storage, UpsertOutcome
 
 
 def test_fresh_db_creation(db_path):
@@ -321,9 +321,6 @@ def test_upsert_nullable_readme(db_path, claude_mem_metadata):
         storage.close()
 
 
-from capxure.storage import Repo
-
-
 def test_list_and_count_repos(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
     storage = Storage(db_path)
     try:
@@ -374,5 +371,36 @@ def test_escape_hatch_connection(db_path, claude_mem_metadata):
             "SELECT COUNT(*) FROM repos WHERE language IS NOT NULL OR language IS NULL"
         )
         assert cur.fetchone()[0] == 1
+    finally:
+        storage.close()
+
+
+def test_get_repo_and_get_repo_by_github_id(db_path, claude_mem_metadata):
+    """Both single-repo lookups round-trip the upserted row and return None for misses."""
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata, "readme")
+
+        owner = claude_mem_metadata["owner"]["login"]
+        name = claude_mem_metadata["name"]
+        github_id = claude_mem_metadata["id"]
+
+        by_name = storage.get_repo(owner, name)
+        assert by_name is not None
+        assert isinstance(by_name, Repo)
+        assert by_name.github_id == github_id
+        assert by_name.full_name == claude_mem_metadata["full_name"]
+
+        by_id = storage.get_repo_by_github_id(github_id)
+        assert by_id is not None
+        assert by_id.owner == owner
+        assert by_id.name == name
+
+        # Both lookups return the same underlying row.
+        assert by_name.id == by_id.id
+
+        # Not-found paths.
+        assert storage.get_repo("nobody", "nope") is None
+        assert storage.get_repo_by_github_id(-1) is None
     finally:
         storage.close()
