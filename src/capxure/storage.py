@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -103,6 +104,10 @@ PRAGMA user_version = 1;
 """
 
 
+def _sha256_hex(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
 def _resolve_default_db_path() -> Path:
     """Resolve the default SQLite db location.
 
@@ -190,7 +195,76 @@ class Storage:
         metadata: dict[str, Any],
         readme_content: str | None,
     ) -> UpsertOutcome:
-        raise NotImplementedError("upsert() is implemented in Task 3+")
+        github_id = metadata["id"]
+        readme_sha = _sha256_hex(readme_content) if readme_content is not None else None
+
+        with self._conn:
+            existing = self._fetch_internal_by_github_id(github_id)
+            if existing is None:
+                repo_id = self._insert_repo(metadata, readme_content, readme_sha)
+                self._replace_topics(repo_id, metadata.get("topics", []))
+                return UpsertOutcome.NEW
+
+            # Remaining branches (UPDATED / UNCHANGED / RENAMED / LOCAL_IS_NEWER)
+            # are added in Task 4.
+            raise NotImplementedError("update branches land in Task 4")
+
+    # --- internal helpers ---
+
+    def _fetch_internal_by_github_id(self, github_id: int) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT id, owner, name, pushed_at, readme_sha "
+            "FROM repos WHERE github_id = ?",
+            (github_id,),
+        ).fetchone()
+
+    def _insert_repo(
+        self,
+        metadata: dict[str, Any],
+        readme_content: str | None,
+        readme_sha: str | None,
+    ) -> int:
+        cur = self._conn.execute(
+            """
+            INSERT INTO repos (
+                github_id, owner, name, full_name, url, default_branch,
+                description, language, stars, forks, pushed_at,
+                is_fork, is_archived, readme_content, readme_sha, metadata
+            ) VALUES (
+                :github_id, :owner, :name, :full_name, :url, :default_branch,
+                :description, :language, :stars, :forks, :pushed_at,
+                :is_fork, :is_archived, :readme_content, :readme_sha, :metadata
+            )
+            """,
+            {
+                "github_id":      metadata["id"],
+                "owner":          metadata["owner"]["login"],
+                "name":           metadata["name"],
+                "full_name":      metadata["full_name"],
+                "url":            metadata["html_url"],
+                "default_branch": metadata.get("default_branch"),
+                "description":    metadata.get("description"),
+                "language":       metadata.get("language"),
+                "stars":          metadata.get("stargazers_count") or 0,
+                "forks":          metadata.get("forks_count") or 0,
+                "pushed_at":      metadata.get("pushed_at"),
+                "is_fork":        1 if metadata.get("fork") else 0,
+                "is_archived":    1 if metadata.get("archived") else 0,
+                "readme_content": readme_content,
+                "readme_sha":     readme_sha,
+                "metadata":       json.dumps(metadata),
+            },
+        )
+        assert cur.lastrowid is not None
+        return cur.lastrowid
+
+    def _replace_topics(self, repo_id: int, topics: list[str]) -> None:
+        self._conn.execute("DELETE FROM repo_topics WHERE repo_id = ?", (repo_id,))
+        if topics:
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO repo_topics (repo_id, topic) VALUES (?, ?)",
+                [(repo_id, t) for t in topics],
+            )
 
     def diff(self, metadata: dict[str, Any]) -> UpsertOutcome:
         raise NotImplementedError("diff() is implemented in Task 5")
