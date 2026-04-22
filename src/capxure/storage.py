@@ -351,7 +351,22 @@ class Storage:
             )
 
     def diff(self, metadata: dict[str, Any]) -> UpsertOutcome:
-        raise NotImplementedError("diff() is implemented in Task 5")
+        """Classify what upsert() *would* do, without writing.
+
+        Note: diff() cannot know about README-only changes because the caller
+        has not fetched the README yet — that's the whole point of this method
+        (skip the fetch when pushed_at + owner/name + existence say nothing
+        has changed). When diff returns UNCHANGED, upsert() called afterward
+        with the freshly-fetched README may itself decide UPDATED if the
+        README content changed despite a static pushed_at; that's correct.
+        """
+        existing = self._fetch_internal_by_github_id(metadata["id"])
+        # Pass existing readme_sha so that an UNCHANGED classification is
+        # conservative: if a README-only change happened AND pushed_at didn't
+        # move, diff() returns UNCHANGED (caller skips fetch), and that's the
+        # acceptable outcome — we trust pushed_at.
+        readme_sha = existing["readme_sha"] if existing is not None else None
+        return self._classify(existing, metadata, readme_sha)
 
     # --- read path (filled in Task 7) ---
 

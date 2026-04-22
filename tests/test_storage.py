@@ -5,6 +5,8 @@ import copy
 import hashlib
 import sqlite3
 
+import pytest
+
 from capxure.storage import Storage, UpsertOutcome
 
 
@@ -188,5 +190,65 @@ def test_upsert_local_has_pushed_at_remote_does_not(db_path, claude_mem_metadata
         ).fetchone()
         assert row["pushed_at"] == "2030-01-01T00:00:00Z"
         assert row["readme_content"] == "preserved readme"
+    finally:
+        storage.close()
+
+
+@pytest.mark.parametrize(
+    "prepare,query_mutation,expected",
+    [
+        # NEW: nothing in db yet.
+        (
+            lambda storage, md: None,
+            lambda md: md,
+            UpsertOutcome.NEW,
+        ),
+        # UNCHANGED: insert first, then diff identical.
+        (
+            lambda storage, md: storage.upsert(md, "readme-x"),
+            lambda md: md,
+            UpsertOutcome.UNCHANGED,
+        ),
+        # UPDATED: insert, then diff with advanced pushed_at.
+        (
+            lambda storage, md: storage.upsert(md, "readme-x"),
+            lambda md: {**md, "pushed_at": "2099-01-01T00:00:00Z"},
+            UpsertOutcome.UPDATED,
+        ),
+        # LOCAL_IS_NEWER: insert with future pushed_at, diff with older.
+        (
+            lambda storage, md: storage.upsert(
+                {**md, "pushed_at": "2099-01-01T00:00:00Z"},
+                "readme-x",
+            ),
+            lambda md: {**md, "pushed_at": "2000-01-01T00:00:00Z"},
+            UpsertOutcome.LOCAL_IS_NEWER,
+        ),
+    ],
+    ids=["new", "unchanged", "updated", "local_is_newer"],
+)
+def test_diff_matches_upsert_classification(
+    db_path, claude_mem_metadata, prepare, query_mutation, expected
+):
+    """diff() returns the same outcome upsert() would, without writing."""
+    storage = Storage(db_path)
+    try:
+        prepare(storage, claude_mem_metadata)
+
+        # For UNCHANGED, the prepared upsert uses readme "readme-x". We need the
+        # diff to supply the SAME readme content to compute the same sha.
+        # (Metadata-only diff is not the public contract; it includes the
+        # intended readme_content so the outcome matches what upsert would do.)
+        query_meta = query_mutation(claude_mem_metadata)
+
+        # diff() signature is diff(metadata) — it does not take the readme
+        # because the caller hasn't fetched it yet. So diff can't detect a
+        # "README-only change"; UNCHANGED/UPDATED here are driven by pushed_at.
+        outcome = storage.diff(query_meta)
+        assert outcome == expected
+
+        # Proof of read-only: count_repos reflects only what prepare() did.
+        expected_row_count = 0 if expected == UpsertOutcome.NEW else 1
+        assert storage.count_repos() == expected_row_count
     finally:
         storage.close()
