@@ -12,5 +12,16 @@ dependencies = [
     "platformdirs>=4",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/capxure"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
