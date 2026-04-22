@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
@@ -97,22 +98,31 @@ CREATE TABLE repo_topics (
 );
 
 CREATE INDEX idx_repo_topics_topic ON repo_topics(topic);
+
+PRAGMA user_version = 1;
 """
 
 
 def _resolve_default_db_path() -> Path:
     """Resolve the default SQLite db location.
 
-    Uses platformdirs.user_data_dir when the library is embedded; falls back to
-    package-relative `data/` when running in-repo (useful for development).
+    Priority:
+      1. $CAPXURE_DATA_DIR environment variable, if set and non-empty
+      2. platformdirs.user_data_dir("capxure")
+      3. RuntimeError if neither yields a usable path
+
+    The result has `capxure.db` appended.
     """
-    try:
-        package_data = Path(__file__).resolve().parent.parent.parent / "data"
-        if package_data.is_dir():
-            return package_data / "capxure.db"
-    except Exception:
-        pass
-    return Path(user_data_dir("capxure")) / "capxure.db"
+    env = os.environ.get("CAPXURE_DATA_DIR", "").strip()
+    if env:
+        return Path(env) / "capxure.db"
+    resolved = user_data_dir("capxure")
+    if resolved:
+        return Path(resolved) / "capxure.db"
+    raise RuntimeError(
+        "Cannot resolve default db path: set $CAPXURE_DATA_DIR "
+        "or ensure platformdirs is working"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -166,9 +176,7 @@ class Storage:
         cur = self._conn.execute("PRAGMA user_version")
         current = cur.fetchone()[0]
         if current == 0:
-            with self._conn:
-                self._conn.executescript(_SCHEMA_SQL)
-                self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+            self._conn.executescript(_SCHEMA_SQL)
         elif current != _SCHEMA_VERSION:
             raise UnsupportedSchemaError(
                 f"DB at {self._db_path} uses schema version {current}, "
