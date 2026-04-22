@@ -200,16 +200,49 @@ class Storage:
 
         with self._conn:
             existing = self._fetch_internal_by_github_id(github_id)
-            if existing is None:
+            outcome = self._classify(existing, metadata, readme_sha)
+
+            if outcome == UpsertOutcome.NEW:
                 repo_id = self._insert_repo(metadata, readme_content, readme_sha)
                 self._replace_topics(repo_id, metadata.get("topics", []))
-                return UpsertOutcome.NEW
+            elif outcome in (UpsertOutcome.UPDATED, UpsertOutcome.RENAMED):
+                assert existing is not None  # type-narrow: UPDATED/RENAMED imply an existing row
+                self._update_repo(existing["id"], metadata, readme_content, readme_sha)
+                self._replace_topics(existing["id"], metadata.get("topics", []))
+            # UNCHANGED and LOCAL_IS_NEWER: no-op writes.
 
-            # Remaining branches (UPDATED / UNCHANGED / RENAMED / LOCAL_IS_NEWER)
-            # are added in Task 4.
-            raise NotImplementedError("update branches land in Task 4")
+        return outcome
 
     # --- internal helpers ---
+
+    def _classify(
+        self,
+        existing: sqlite3.Row | None,
+        metadata: dict[str, Any],
+        readme_sha: str | None,
+    ) -> UpsertOutcome:
+        if existing is None:
+            return UpsertOutcome.NEW
+
+        remote_push = metadata.get("pushed_at")
+        local_push = existing["pushed_at"]
+
+        if local_push and remote_push and local_push > remote_push:
+            return UpsertOutcome.LOCAL_IS_NEWER
+
+        renamed = (
+            existing["owner"] != metadata["owner"]["login"]
+            or existing["name"] != metadata["name"]
+        )
+
+        if (
+            existing["readme_sha"] == readme_sha
+            and local_push == remote_push
+            and not renamed
+        ):
+            return UpsertOutcome.UNCHANGED
+
+        return UpsertOutcome.RENAMED if renamed else UpsertOutcome.UPDATED
 
     def _fetch_internal_by_github_id(self, github_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
@@ -257,6 +290,54 @@ class Storage:
         )
         assert cur.lastrowid is not None
         return cur.lastrowid
+
+    def _update_repo(
+        self,
+        repo_id: int,
+        metadata: dict[str, Any],
+        readme_content: str | None,
+        readme_sha: str | None,
+    ) -> None:
+        self._conn.execute(
+            """
+            UPDATE repos SET
+                owner          = :owner,
+                name           = :name,
+                full_name      = :full_name,
+                url            = :url,
+                default_branch = :default_branch,
+                description    = :description,
+                language       = :language,
+                stars          = :stars,
+                forks          = :forks,
+                pushed_at      = :pushed_at,
+                is_fork        = :is_fork,
+                is_archived    = :is_archived,
+                readme_content = :readme_content,
+                readme_sha     = :readme_sha,
+                metadata       = :metadata,
+                last_synced_at = datetime('now')
+            WHERE id = :id
+            """,
+            {
+                "id":             repo_id,
+                "owner":          metadata["owner"]["login"],
+                "name":           metadata["name"],
+                "full_name":      metadata["full_name"],
+                "url":            metadata["html_url"],
+                "default_branch": metadata.get("default_branch"),
+                "description":    metadata.get("description"),
+                "language":       metadata.get("language"),
+                "stars":          metadata.get("stargazers_count") or 0,
+                "forks":          metadata.get("forks_count") or 0,
+                "pushed_at":      metadata.get("pushed_at"),
+                "is_fork":        1 if metadata.get("fork") else 0,
+                "is_archived":    1 if metadata.get("archived") else 0,
+                "readme_content": readme_content,
+                "readme_sha":     readme_sha,
+                "metadata":       json.dumps(metadata),
+            },
+        )
 
     def _replace_topics(self, repo_id: int, topics: list[str]) -> None:
         self._conn.execute("DELETE FROM repo_topics WHERE repo_id = ?", (repo_id,))
