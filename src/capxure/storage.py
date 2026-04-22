@@ -376,20 +376,64 @@ class Storage:
         readme_sha = existing["readme_sha"] if existing is not None else None
         return self._classify(existing, metadata, readme_sha)
 
-    # --- read path (filled in Task 7) ---
+    # --- read path ---
 
     def get_repo(self, owner: str, name: str) -> Repo | None:
-        raise NotImplementedError("get_repo() is implemented in Task 7")
+        row = self._conn.execute(
+            "SELECT * FROM repos WHERE owner = ? AND name = ?",
+            (owner, name),
+        ).fetchone()
+        return self._row_to_repo(row) if row is not None else None
 
     def get_repo_by_github_id(self, github_id: int) -> Repo | None:
-        raise NotImplementedError("get_repo_by_github_id() is implemented in Task 7")
+        row = self._conn.execute(
+            "SELECT * FROM repos WHERE github_id = ?",
+            (github_id,),
+        ).fetchone()
+        return self._row_to_repo(row) if row is not None else None
 
     def list_repos(self) -> list[Repo]:
-        raise NotImplementedError("list_repos() is implemented in Task 7")
+        rows = self._conn.execute(
+            "SELECT * FROM repos ORDER BY github_id ASC"
+        ).fetchall()
+        return [self._row_to_repo(row) for row in rows]
 
     def count_repos(self) -> int:
         cur = self._conn.execute("SELECT COUNT(*) FROM repos")
         return cur.fetchone()[0]
 
     def get_metadata_json(self, owner: str, name: str) -> dict[str, Any] | None:
-        raise NotImplementedError("get_metadata_json() is implemented in Task 7")
+        row = self._conn.execute(
+            "SELECT metadata FROM repos WHERE owner = ? AND name = ?",
+            (owner, name),
+        ).fetchone()
+        return json.loads(row["metadata"]) if row is not None else None
+
+    def _row_to_repo(self, row: sqlite3.Row) -> Repo:
+        topics = tuple(
+            r[0] for r in self._conn.execute(
+                "SELECT topic FROM repo_topics WHERE repo_id = ? ORDER BY topic",
+                (row["id"],),
+            ).fetchall()
+        )
+        return Repo(
+            id=row["id"],
+            github_id=row["github_id"],
+            owner=row["owner"],
+            name=row["name"],
+            full_name=row["full_name"],
+            url=row["url"],
+            default_branch=row["default_branch"],
+            description=row["description"],
+            language=row["language"],
+            stars=row["stars"],
+            forks=row["forks"],
+            pushed_at=row["pushed_at"],
+            is_fork=bool(row["is_fork"]),
+            is_archived=bool(row["is_archived"]),
+            topics=topics,
+            readme_content=row["readme_content"],
+            readme_sha=row["readme_sha"],
+            captured_at=row["captured_at"],
+            last_synced_at=row["last_synced_at"],
+        )

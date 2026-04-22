@@ -319,3 +319,60 @@ def test_upsert_nullable_readme(db_path, claude_mem_metadata):
         assert row["readme_sha"] is None
     finally:
         storage.close()
+
+
+from capxure.storage import Repo
+
+
+def test_list_and_count_repos(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "readme-1")
+        storage.upsert(awesome_nodejs_metadata, "readme-2")
+        storage.upsert(chunky_metadata,         "readme-3")
+
+        assert storage.count_repos() == 3
+
+        repos = storage.list_repos()
+        assert len(repos) == 3
+        assert all(isinstance(r, Repo) for r in repos)
+
+        # Deterministic order: by github_id ascending.
+        ids = [r.github_id for r in repos]
+        assert ids == sorted(ids)
+
+        # Each Repo carries its topics populated from the junction table.
+        claude_repo = next(r for r in repos if r.github_id == claude_mem_metadata["id"])
+        assert tuple(sorted(claude_repo.topics)) == tuple(sorted(claude_mem_metadata.get("topics", [])))
+    finally:
+        storage.close()
+
+
+def test_get_metadata_json_roundtrip(db_path, claude_mem_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata, "readme")
+        got = storage.get_metadata_json(
+            claude_mem_metadata["owner"]["login"],
+            claude_mem_metadata["name"],
+        )
+        assert got == claude_mem_metadata
+
+        missing = storage.get_metadata_json("nobody", "nope")
+        assert missing is None
+    finally:
+        storage.close()
+
+
+def test_escape_hatch_connection(db_path, claude_mem_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata, "readme")
+
+        # Consumer drops to raw SQL via the documented escape hatch.
+        cur = storage.connection.execute(
+            "SELECT COUNT(*) FROM repos WHERE language IS NOT NULL OR language IS NULL"
+        )
+        assert cur.fetchone()[0] == 1
+    finally:
+        storage.close()
