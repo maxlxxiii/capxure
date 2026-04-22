@@ -198,18 +198,26 @@ class Storage:
         github_id = metadata["id"]
         readme_sha = _sha256_hex(readme_content) if readme_content is not None else None
 
-        with self._conn:
-            existing = self._fetch_internal_by_github_id(github_id)
-            outcome = self._classify(existing, metadata, readme_sha)
+        try:
+            with self._conn:
+                existing = self._fetch_internal_by_github_id(github_id)
+                outcome = self._classify(existing, metadata, readme_sha)
 
-            if outcome == UpsertOutcome.NEW:
-                repo_id = self._insert_repo(metadata, readme_content, readme_sha)
-                self._replace_topics(repo_id, metadata.get("topics", []))
-            elif outcome in (UpsertOutcome.UPDATED, UpsertOutcome.RENAMED):
-                assert existing is not None  # type-narrow: UPDATED/RENAMED imply an existing row
-                self._update_repo(existing["id"], metadata, readme_content, readme_sha)
-                self._replace_topics(existing["id"], metadata.get("topics", []))
-            # UNCHANGED and LOCAL_IS_NEWER: no-op writes.
+                if outcome == UpsertOutcome.NEW:
+                    repo_id = self._insert_repo(metadata, readme_content, readme_sha)
+                    self._replace_topics(repo_id, metadata.get("topics", []))
+                elif outcome in (UpsertOutcome.UPDATED, UpsertOutcome.RENAMED):
+                    assert existing is not None  # type-narrow: UPDATED/RENAMED imply an existing row
+                    self._update_repo(existing["id"], metadata, readme_content, readme_sha)
+                    self._replace_topics(existing["id"], metadata.get("topics", []))
+                # UNCHANGED and LOCAL_IS_NEWER: no-op writes.
+        except sqlite3.IntegrityError as exc:
+            if "repos.owner" in str(exc) or "UNIQUE constraint failed: repos.owner, repos.name" in str(exc):
+                raise DuplicateRepoNameError(
+                    f"(owner={metadata['owner']['login']!r}, name={metadata['name']!r}) "
+                    f"already occupied by a different github_id"
+                ) from exc
+            raise
 
         return outcome
 

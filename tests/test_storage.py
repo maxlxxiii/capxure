@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from capxure.storage import Storage, UpsertOutcome
+from capxure.storage import DuplicateRepoNameError, Storage, UpsertOutcome
 
 
 def test_fresh_db_creation(db_path):
@@ -250,5 +250,72 @@ def test_diff_matches_upsert_classification(
         # Proof of read-only: count_repos reflects only what prepare() did.
         expected_row_count = 0 if expected == UpsertOutcome.NEW else 1
         assert storage.count_repos() == expected_row_count
+    finally:
+        storage.close()
+
+
+def test_duplicate_repo_name_raises(db_path, claude_mem_metadata):
+    """Inserting a new repo whose (owner, name) matches an existing repo
+    with a DIFFERENT github_id raises DuplicateRepoNameError."""
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata, "readme one")
+
+        collider = copy.deepcopy(claude_mem_metadata)
+        collider["id"] = claude_mem_metadata["id"] + 9999
+        collider["node_id"] = "different-node-id"
+        # Same owner + name as the original — only the github_id changed.
+
+        with pytest.raises(DuplicateRepoNameError):
+            storage.upsert(collider, "readme two")
+    finally:
+        storage.close()
+
+
+def test_topics_add_and_remove(db_path, claude_mem_metadata):
+    """Re-upsert with a modified topics list replaces the stored set."""
+    storage = Storage(db_path)
+    try:
+        first = copy.deepcopy(claude_mem_metadata)
+        first["topics"] = ["a", "b", "c"]
+        first["pushed_at"] = "2030-01-01T00:00:00Z"
+        storage.upsert(first, "readme-v1")
+
+        repo_id_before = storage.connection.execute(
+            "SELECT id FROM repos"
+        ).fetchone()[0]
+
+        second = copy.deepcopy(claude_mem_metadata)
+        second["topics"] = ["a", "b", "d"]
+        second["pushed_at"] = "2030-06-01T00:00:00Z"  # advance to force UPDATED
+        storage.upsert(second, "readme-v2")
+
+        topics = sorted(
+            r[0] for r in storage.connection.execute(
+                "SELECT topic FROM repo_topics"
+            ).fetchall()
+        )
+        assert topics == ["a", "b", "d"]
+
+        repo_id_after = storage.connection.execute(
+            "SELECT id FROM repos"
+        ).fetchone()[0]
+        assert repo_id_after == repo_id_before, "repos.id should be stable across upserts"
+    finally:
+        storage.close()
+
+
+def test_upsert_nullable_readme(db_path, claude_mem_metadata):
+    """readme_content=None round-trips as NULL in the DB."""
+    storage = Storage(db_path)
+    try:
+        outcome = storage.upsert(claude_mem_metadata, None)
+        assert outcome == UpsertOutcome.NEW
+
+        row = storage.connection.execute(
+            "SELECT readme_content, readme_sha FROM repos"
+        ).fetchone()
+        assert row["readme_content"] is None
+        assert row["readme_sha"] is None
     finally:
         storage.close()
