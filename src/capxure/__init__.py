@@ -15,22 +15,31 @@ from capxure.processor import (
     StatusCallback,
     process_repo,
 )
-from capxure.storage import DeduplicationResult, Storage
+from capxure.storage import (
+    DuplicateRepoNameError,
+    Repo,
+    Storage,
+    UnsupportedSchemaError,
+    UpsertOutcome,
+)
 
 __version__ = "0.1.0"
 
 __all__ = [
     "AuthenticationError",
-    "DeduplicationResult",
+    "DuplicateRepoNameError",
     "GitHubClient",
     "GitHubError",
     "NotFoundError",
     "ProcessResult",
     "RateLimitExceededError",
     "RateLimitInfo",
+    "Repo",
     "Severity",
     "StatusCallback",
     "Storage",
+    "UnsupportedSchemaError",
+    "UpsertOutcome",
     "__version__",
     "parse_github_url",
     "process_repo",
