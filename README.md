@@ -92,4 +92,18 @@ with Storage() as storage:
         print(row["full_name"], row["stars"])
 ```
 
-The `data/metadata.json` and `data/readmes/` directories at the repo root are historical fixtures from the pre-SQLite era. The library no longer reads them.
+The `data/` directory at the repo root contains historical fixtures from the pre-SQLite era (`metadata.json`, `readmes/`, `awesome-lists/`). The library no longer reads any of them.
+
+## Changelog
+
+### 0.2.0
+
+**Breaking:** Storage layer rewritten from JSON-files-on-disk to SQLite.
+
+- `DeduplicationResult` enum removed. Replaced by `UpsertOutcome` with the values `NEW`, `UPDATED`, `RENAMED`, `UNCHANGED`, `LOCAL_IS_NEWER`.
+- `Storage` constructor parameter renamed from `data_dir` to `db_path`. The new default resolves to `{CAPXURE_DATA_DIR or platformdirs.user_data_dir("capxure")}/capxure.db`.
+- Old `Storage` methods removed: `load_metadata`, `save_metadata`, `check_dedup`, `save_readme`, `upsert_entry`, `find_key_by_id`, `ensure_directories`, `make_key`.
+- New `Storage` methods: `upsert`, `diff`, `get_repo`, `get_repo_by_github_id`, `list_repos`, `count_repos`, `get_metadata_json`, and the `connection` property (raw SQL escape hatch).
+- New types exported: `Repo` (frozen dataclass), `UpsertOutcome`, `DuplicateRepoNameError`, `UnsupportedSchemaError`.
+- The `processor.process_repo` signature is unchanged, but `ProcessResult.outcome` is now `UpsertOutcome | None` instead of `DeduplicationResult | None`.
+- Data previously captured at `data/metadata.json` + `data/readmes/*.md` is **not auto-migrated**. Re-capture via `process_repo` or hand-load via `storage.upsert`.
