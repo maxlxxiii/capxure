@@ -227,7 +227,10 @@ class Storage:
         remote_push = metadata.get("pushed_at")
         local_push = existing["pushed_at"]
 
-        if local_push and remote_push and local_push > remote_push:
+        # ISO-8601 YYYY-MM-DDTHH:MM:SSZ: lexicographic order == chronological order.
+        # Also treat "local has timestamp, remote has none" as LOCAL_IS_NEWER so
+        # we never overwrite a real timestamp with null.
+        if local_push and (not remote_push or local_push > remote_push):
             return UpsertOutcome.LOCAL_IS_NEWER
 
         renamed = (

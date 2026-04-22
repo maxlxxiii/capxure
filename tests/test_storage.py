@@ -168,3 +168,25 @@ def test_upsert_local_is_newer(db_path, claude_mem_metadata):
         assert row["readme_content"] == readme_v1
     finally:
         storage.close()
+
+
+def test_upsert_local_has_pushed_at_remote_does_not(db_path, claude_mem_metadata):
+    """Local has a real pushed_at; remote sends pushed_at=None. Must NOT overwrite."""
+    storage = Storage(db_path)
+    try:
+        first = copy.deepcopy(claude_mem_metadata)
+        first["pushed_at"] = "2030-01-01T00:00:00Z"
+        storage.upsert(first, "preserved readme")
+
+        incoming = copy.deepcopy(claude_mem_metadata)
+        incoming["pushed_at"] = None
+        outcome = storage.upsert(incoming, "would-be new readme")
+        assert outcome == UpsertOutcome.LOCAL_IS_NEWER
+
+        row = storage.connection.execute(
+            "SELECT pushed_at, readme_content FROM repos"
+        ).fetchone()
+        assert row["pushed_at"] == "2030-01-01T00:00:00Z"
+        assert row["readme_content"] == "preserved readme"
+    finally:
+        storage.close()
