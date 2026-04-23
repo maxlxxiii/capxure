@@ -107,8 +107,6 @@ with Storage() as storage:
         print(row["full_name"], row["stars"])
 ```
 
-The `data/` directory at the repo root contains historical fixtures from the pre-SQLite era (`metadata.json`, `readmes/`, `awesome-lists/`). The library no longer reads any of them.
-
 ## Changelog
 
 ### 0.3.0
