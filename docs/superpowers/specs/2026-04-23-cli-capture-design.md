@@ -77,15 +77,18 @@ Invocation: `cap <target> [--data-dir PATH]`
 
 ### Token resolution
 
-- Read `GITHUB_TOKEN`; if unset, fall back to `GH_TOKEN`; if neither, use `None` (library supports unauthenticated operation, subject to GitHub's 60-req/hr public limit).
+- Read `GITHUB_TOKEN`; if unset, fall back to `GH_TOKEN`.
+- **If neither is set, exit 1 with `error: GITHUB_TOKEN or GH_TOKEN must be set` on stderr.** A token is required — the current `GitHubClient` unconditionally sends `Authorization: token <token>`, so unauthenticated mode is not available without a library change. Deferred to a future spec if a concrete need arises.
 - No `--token` flag. No `gh auth token` fallback.
-- Resolution happens once at the top of `capture_command`.
+- Resolution happens once at the top of `capture_command`, before any async work begins.
 
 ### Data directory resolution
 
-- If `--data-dir PATH` is provided: expand `~`, resolve to absolute, pass to `Storage(data_dir=...)`.
-- Otherwise: pass `None` to `Storage(...)` and let the library's `platformdirs` default win.
-- Directory creation is already handled by the library on first write.
+- The `Storage` constructor takes a `db_path` (a full path to the SQLite file), not a directory. The CLI presents a directory-level flag and composes the file path:
+  - If `--data-dir PATH` is provided: expand `~`, resolve to absolute, then pass `Storage(db_path=Path(PATH) / "capxure.db")`. `capxure.db` is the library's documented default filename.
+  - Otherwise: pass no args — `Storage()` — and let the library's own default (respecting `CAPXURE_DATA_DIR`, then `platformdirs.user_data_dir("capxure")`) resolve the path.
+- Parent directory creation is already handled by the `Storage` constructor.
+- Note: the library already honors a `CAPXURE_DATA_DIR` env var in its default-path resolution. The CLI does not expose that env var itself, but users who set it will see the override applied transparently (when no `--data-dir` flag is passed).
 
 ### Orchestration
 
@@ -99,16 +102,23 @@ except ValueError as exc:
     print(f"error: {exc}", file=sys.stderr)
     return 3
 
-github = GitHubClient(token=resolved_token)
-storage = Storage(data_dir=resolved_data_dir)
-result = asyncio.run(
-    process_repo(
-        target,
-        github=github,
-        storage=storage,
-        on_status=_print_status,
-    )
-)
+storage = Storage(db_path=resolved_db_path)  # or Storage() if no --data-dir
+
+async def _run() -> ProcessResult:
+    async with GitHubClient(token=resolved_token) as github:
+        return await process_repo(
+            target,
+            github=github,
+            storage=storage,
+            on_status=_print_status,
+        )
+
+try:
+    result = asyncio.run(_run())
+except KeyboardInterrupt:
+    print("interrupted", file=sys.stderr)
+    return 130
+
 return _exit_code_for(result)
 ```
 
@@ -125,7 +135,7 @@ return _exit_code_for(result)
 | Exit code | Condition |
 |-----------|-----------|
 | `0`       | Capture succeeded (any non-`None` `ProcessResult.outcome`, including `UNCHANGED` / `LOCAL_IS_NEWER` dedup-skip outcomes) |
-| `1`       | Capture failed (`ProcessResult.outcome is None` and `.error` is populated — network failure, GitHub rejection, auth failure, rate limit, unexpected library error) |
+| `1`       | Capture failed. Covers: missing token (neither `GITHUB_TOKEN` nor `GH_TOKEN` set), OR `ProcessResult.outcome is None` with `.error` populated (network failure, GitHub rejection, auth failure, rate limit, unexpected library error) |
 | `2`       | Usage error (argparse — missing args, unknown flag) |
 | `3`       | Target parse error (`parse_github_url` raised `ValueError` at the CLI boundary before `process_repo` was invoked) |
 | `130`     | `KeyboardInterrupt` (Ctrl-C), per shell convention |
@@ -136,8 +146,9 @@ Finer-grained exit codes can be added later if scripting needs grow, either by w
 
 Handler behavior:
 
-- Exit `3` path: the CLI calls `parse_github_url` up-front (see Section 3 orchestration). On `ValueError`, print `error: <message>` to stderr, return 3, never invoke `process_repo`.
-- Exit `1` path: after `process_repo` returns, if `result.outcome is None`, return 1. The `error` message has already been surfaced via the status callback (processor calls `on_status(..., Severity.ERROR)` for every failure before returning), so the CLI does not re-print it.
+- Exit `3` path: the CLI calls `parse_github_url` up-front (see Section 3 orchestration). On `ValueError`, print `error: <message>` to stderr, return 3, never construct `GitHubClient` or invoke `process_repo`.
+- Exit `1` (missing token) path: before constructing `GitHubClient`, check that `GITHUB_TOKEN` or `GH_TOKEN` is set. If neither, print `error: GITHUB_TOKEN or GH_TOKEN must be set` to stderr, return 1.
+- Exit `1` (library failure) path: after `process_repo` returns, if `result.outcome is None`, return 1. The `error` message has already been surfaced via the status callback (processor calls `on_status(..., Severity.ERROR)` for every failure before returning), so the CLI does not re-print it.
 - Exit `0` path: `result.outcome is not None`. Status callback has already printed the success/dedup line.
 - Exit `130` path: wrap `asyncio.run(...)` in `try/except KeyboardInterrupt`, print `interrupted` to stderr, return 130.
 - No tracebacks shown to the user by default. A `--debug` flag is out of scope.
