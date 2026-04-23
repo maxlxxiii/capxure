@@ -218,19 +218,47 @@ class TestCommandHappyPath:
 
     def test_passes_keyword_args_to_process_repo(self, monkeypatch, args_ok):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        # Rebuild patches locally so we can refer to the instance objects.
+        client_instance = MagicMock(name="GitHubClient.instance")
+        client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
+        storage_instance = MagicMock(name="Storage.instance")
+        storage_cls = MagicMock(name="Storage", return_value=storage_instance)
+        process_repo_mock = AsyncMock(name="process_repo")
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
+        monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
+        monkeypatch.setattr("capxure.cli.capture.Storage", storage_cls)
+        monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
 
         command(args_ok)
 
         process_repo_mock.assert_called_once()
         call = process_repo_mock.call_args
         assert call.args == ("owner/repo",)
-        assert "github" in call.kwargs
-        assert "storage" in call.kwargs
-        assert "on_status" in call.kwargs
+        # Identity checks: verify the CLI passed the actual yielded / constructed objects.
+        assert call.kwargs["github"] is client_instance
+        assert call.kwargs["storage"] is storage_instance
+        # on_status should be _print_status itself — not a wrapper, not a lambda.
+        assert call.kwargs["on_status"] is _print_status
+
+    def test_integration_real_asyncio_and_storage(self, monkeypatch, args_ok, tmp_path):
+        """Real asyncio.run + real Storage + mocked network — catches integration seams."""
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        # Patch network only. Storage stays real and writes to tmp_path/capxure.db.
+        client_instance = MagicMock(name="GitHubClient.instance")
+        client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
+        process_repo_mock = AsyncMock(name="process_repo")
+        process_repo_mock.return_value = ProcessResult(
+            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
+        )
+        monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
+        monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
+        # Note: Storage is NOT patched — real SQLite DB created on tmp_path.
+
+        assert command(args_ok) == 0
+        # Confirm Storage actually built a DB file on disk.
+        assert (tmp_path / "capxure.db").exists()
 
 
 class TestCommandErrorPaths:
@@ -269,11 +297,10 @@ class TestCommandErrorPaths:
 
     def test_returns_130_on_keyboard_interrupt(self, monkeypatch, args_ok, capsys):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _patch_client_and_storage(monkeypatch)
-
-        def _boom(_coro):
-            raise KeyboardInterrupt
-        monkeypatch.setattr("capxure.cli.capture.asyncio.run", _boom)
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        # Let the real asyncio.run execute; KeyboardInterrupt propagates out of
+        # the awaited process_repo call, hitting the try/except in command().
+        process_repo_mock.side_effect = KeyboardInterrupt
 
         assert command(args_ok) == 130
         assert "interrupted" in capsys.readouterr().err
