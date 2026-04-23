@@ -128,3 +128,186 @@ class TestExitCodeFor:
     def test_one_when_outcome_none(self):
         result = ProcessResult(owner="a", repo="b", outcome=None, error="network dead")
         assert _exit_code_for(result) == 1
+
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
+
+from capxure.cli.capture import command
+
+
+@pytest.fixture
+def args_ok(tmp_path):
+    """A plausible argparse namespace: valid target + data-dir under tmp."""
+    ns = argparse.Namespace()
+    ns.target = "owner/repo"
+    ns.data_dir = str(tmp_path)
+    ns.handler = command
+    ns.subcommand = "capture"
+    return ns
+
+
+class _AsyncCM:
+    """Minimal async context manager for mocking GitHubClient."""
+    def __init__(self, value):
+        self._value = value
+    async def __aenter__(self):
+        return self._value
+    async def __aexit__(self, *exc):
+        return False
+
+
+def _patch_client_and_storage(monkeypatch):
+    """Replace GitHubClient (async CM) and Storage with test doubles. Returns (client, storage, process_repo_mock)."""
+    client_instance = MagicMock(name="GitHubClient.instance")
+    client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
+    storage_instance = MagicMock(name="Storage.instance")
+    storage_cls = MagicMock(name="Storage", return_value=storage_instance)
+    process_repo_mock = AsyncMock(name="process_repo")
+
+    monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
+    monkeypatch.setattr("capxure.cli.capture.Storage", storage_cls)
+    monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
+    return client_cls, storage_cls, process_repo_mock
+
+
+class TestCommandHappyPath:
+    def test_returns_zero_on_successful_capture(self, monkeypatch, args_ok):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
+        )
+
+        assert command(args_ok) == 0
+
+    def test_passes_token_to_github_client(self, monkeypatch, args_ok):
+        monkeypatch.setenv("GITHUB_TOKEN", "secret123")
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        client_cls, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="o", repo="r", outcome=UpsertOutcome.NEW
+        )
+
+        command(args_ok)
+        client_cls.assert_called_once_with(token="secret123")
+
+    def test_passes_composed_db_path_to_storage(self, monkeypatch, args_ok, tmp_path):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, storage_cls, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="o", repo="r", outcome=UpsertOutcome.NEW
+        )
+
+        command(args_ok)
+        # _resolve_db_path calls .expanduser().resolve() on the parent dir, so
+        # compare against the same canonicalization to survive macOS's /private symlink.
+        expected = tmp_path.expanduser().resolve() / "capxure.db"
+        storage_cls.assert_called_once_with(db_path=expected)
+
+    def test_omits_db_path_when_no_data_dir_flag(self, monkeypatch, args_ok):
+        args_ok.data_dir = None
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, storage_cls, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="o", repo="r", outcome=UpsertOutcome.NEW
+        )
+
+        command(args_ok)
+        storage_cls.assert_called_once_with()
+
+    def test_passes_keyword_args_to_process_repo(self, monkeypatch, args_ok):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="o", repo="r", outcome=UpsertOutcome.NEW
+        )
+
+        command(args_ok)
+
+        process_repo_mock.assert_called_once()
+        call = process_repo_mock.call_args
+        assert call.args == ("owner/repo",)
+        assert "github" in call.kwargs
+        assert "storage" in call.kwargs
+        assert "on_status" in call.kwargs
+
+
+class TestCommandErrorPaths:
+    def test_returns_one_when_process_repo_reports_failure(
+        self, monkeypatch, args_ok, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="o", repo="r", outcome=None, error="rate limited"
+        )
+
+        assert command(args_ok) == 1
+
+    def test_returns_one_and_stderr_message_when_token_missing(
+        self, monkeypatch, args_ok, capsys
+    ):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        # GitHubClient/Storage should NOT be constructed.
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+
+        assert command(args_ok) == 1
+        err = capsys.readouterr().err
+        assert "GITHUB_TOKEN" in err and "GH_TOKEN" in err
+        process_repo_mock.assert_not_called()
+
+    def test_returns_three_on_parse_error(self, monkeypatch, args_ok, capsys):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        args_ok.target = "not-a-valid-url-at-all-no-slashes-here"
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+
+        assert command(args_ok) == 3
+        process_repo_mock.assert_not_called()
+        assert "error:" in capsys.readouterr().err.lower()
+
+    def test_returns_130_on_keyboard_interrupt(self, monkeypatch, args_ok, capsys):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _patch_client_and_storage(monkeypatch)
+
+        def _boom(_coro):
+            raise KeyboardInterrupt
+        monkeypatch.setattr("capxure.cli.capture.asyncio.run", _boom)
+
+        assert command(args_ok) == 130
+        assert "interrupted" in capsys.readouterr().err
+
+
+class TestMainDispatch:
+    """`main(['owner/repo'])` must route through the capture handler via argv rewrite."""
+
+    def test_slash_target_routes_to_capture(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
+        )
+
+        assert main(["owner/repo"]) == 0
+        process_repo_mock.assert_called_once()
+        assert process_repo_mock.call_args.args == ("owner/repo",)
+
+    def test_url_target_routes_to_capture(self, monkeypatch):
+        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
+        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        process_repo_mock.return_value = ProcessResult(
+            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
+        )
+
+        url = "https://github.com/owner/repo"
+        assert main([url]) == 0
+        assert process_repo_mock.call_args.args == (url,)
+
+    def test_unknown_subcommand_exits_2(self, capsys):
+        """A bare word without `/` isn't a capture target; argparse rejects it as an unknown subcommand and exits 2."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["gibberish"])
+        assert exc_info.value.code == 2
+        # argparse writes its "invalid choice" message to stderr
+        assert "gibberish" in capsys.readouterr().err

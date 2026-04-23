@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 from pathlib import Path
 
-from capxure import ProcessResult, Severity
+from capxure import (
+    GitHubClient,
+    ProcessResult,
+    Severity,
+    Storage,
+    parse_github_url,
+    process_repo,
+)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -21,8 +29,41 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def command(args: argparse.Namespace) -> int:
-    # Wired in Task 4. Helpers are exercised by Task 3's tests.
-    return 0
+    # Preflight: token required. Keep the check above any network/IO.
+    token = _resolve_token()
+    if token is None:
+        print("error: GITHUB_TOKEN or GH_TOKEN must be set", file=sys.stderr)
+        return 1
+
+    # Preflight: parse target so malformed input gets a distinct exit code. The
+    # library's parse_github_url requires a `github.com/` prefix, so normalize a
+    # bare `owner/repo` shorthand before checking.
+    probe = args.target if "github.com/" in args.target else f"github.com/{args.target}"
+    try:
+        parse_github_url(probe)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+
+    db_path = _resolve_db_path(args.data_dir)
+    storage = Storage(db_path=db_path) if db_path is not None else Storage()
+
+    async def _run() -> ProcessResult:
+        async with GitHubClient(token=token) as github:
+            return await process_repo(
+                args.target,
+                github=github,
+                storage=storage,
+                on_status=_print_status,
+            )
+
+    try:
+        result = asyncio.run(_run())
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130
+
+    return _exit_code_for(result)
 
 
 # --- helpers ---
