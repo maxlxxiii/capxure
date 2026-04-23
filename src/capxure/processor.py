@@ -91,15 +91,14 @@ async def process_repo(
         return ProcessResult(owner=owner, repo=repo, outcome=outcome)
 
     # Fetch README.
-    default_branch = metadata_entry.get("default_branch", "main")
     on_status(f"Downloading README for {owner}/{repo}...", Severity.INFO)
 
     try:
-        readme_content = await github.fetch_readme(owner, repo, default_branch)
+        readme_content = await github.fetch_readme(owner, repo)
     except NotFoundError:
         readme_content = None
         on_status(
-            f"{owner}/{repo}: no README.md found, storing NULL readme",
+            f"{owner}/{repo}: no README found, storing NULL readme",
             Severity.INFO,
         )
 

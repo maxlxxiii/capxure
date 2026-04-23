@@ -77,7 +77,6 @@ class GitHubClient:
     """Async GitHub API client using httpx."""
 
     BASE_API = "https://api.github.com"
-    BASE_RAW = "https://raw.githubusercontent.com"
 
     def __init__(self, token: str) -> None:
         self._token = token
@@ -127,12 +126,20 @@ class GitHubClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def fetch_readme(self, owner: str, repo: str, default_branch: str) -> str:
-        """GET raw README.md from the default branch."""
-        url = f"{self.BASE_RAW}/{owner}/{repo}/{default_branch}/README.md"
-        resp = await self.client.get(url)
+    async def fetch_readme(self, owner: str, repo: str) -> str:
+        """GET the repository README via the dedicated GitHub endpoint.
+
+        Returns the raw README text regardless of filename or extension
+        (README.md, README.rst, README, etc.).
+        """
+        resp = await self.client.get(
+            f"{self.BASE_API}/repos/{owner}/{repo}/readme",
+            headers={"Accept": "application/vnd.github.raw"},
+        )
+        self._check_auth(resp)
+        self._check_rate_limit(resp)
         if resp.status_code == 404:
-            raise NotFoundError(f"README.md not found for {owner}/{repo}")
+            raise NotFoundError(f"README not found for {owner}/{repo}")
         resp.raise_for_status()
         return resp.text
 
