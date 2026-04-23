@@ -55,7 +55,7 @@ class RateLimitInfo:
 # ── URL parsing ───────────────────────────────────────────────
 
 _GITHUB_URL_RE = re.compile(
-    r"(?:https?://)?github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$"
+    r"(?:(?:https?://)?github\.com/)?([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$"
 )
 
 

@@ -35,12 +35,9 @@ def command(args: argparse.Namespace) -> int:
         print("error: GITHUB_TOKEN or GH_TOKEN must be set", file=sys.stderr)
         return 1
 
-    # Preflight: parse target so malformed input gets a distinct exit code. The
-    # library's parse_github_url requires a `github.com/` prefix, so normalize a
-    # bare `owner/repo` shorthand before checking.
-    probe = args.target if "github.com/" in args.target else f"github.com/{args.target}"
+    # Preflight: parse target so malformed input gets a distinct exit code.
     try:
-        parse_github_url(probe)
+        parse_github_url(args.target)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
