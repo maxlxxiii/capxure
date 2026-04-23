@@ -338,3 +338,15 @@ class TestMainDispatch:
         assert exc_info.value.code == 2
         # argparse writes its "invalid choice" message to stderr
         assert "gibberish" in capsys.readouterr().err
+
+
+def test_cli_help_exits_zero_and_mentions_cap():
+    """`python -m capxure.cli --help` → exit 0, usage on stdout."""
+    result = subprocess.run(
+        [sys.executable, "-m", "capxure.cli", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "cap" in result.stdout.lower()
+    assert "capture" in result.stdout.lower()
