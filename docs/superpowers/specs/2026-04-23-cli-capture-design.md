@@ -74,6 +74,7 @@ Invocation: `cap <target> [--data-dir PATH]`
 
 - Delegated entirely to `capxure.github.parse_github_url`. The CLI adds no parsing of its own.
 - If `parse_github_url` raises, catch at the handler boundary, print `error: <message>` to stderr, exit 3.
+- **Library change during implementation:** `parse_github_url`'s regex was broadened so bare `owner/repo` shorthand parses (the `github.com/` prefix became optional). The dispatch rule in §2 relies on `/` as the capture-target marker, so the library must accept that form. See `tests/test_github.py` for the accept/reject matrix.
 
 ### Token resolution
 
@@ -128,7 +129,7 @@ return _exit_code_for(result)
 - One line to **stderr** per event: `{severity}: {message}` (e.g., `info: Fetching metadata for owner/repo...`). Severity values are those from the library's `Severity` enum (`INFO`, `SUCCESS`, `ERROR`, etc.), lowercased for display.
 - No color, no spinners, no timestamps. stdout writes flushed after each line.
 - **stdout stays empty during capture.** Reserved for structured output from future subcommands (`list`, `show`), so `cap <repo> && cap show <repo>` composes cleanly.
-- On success, a final one-liner to stderr summarizing the capture (e.g., `captured owner/repo`).
+- No explicit "captured owner/repo" summary line from the CLI on success — the library's own status callback already emits a terminal `success: owner/repo: captured successfully` (or the equivalent for update/dedup outcomes), and piling a CLI-level summary on top would be redundant.
 
 ## Error handling & exit codes
 
@@ -180,7 +181,7 @@ Monkeypatch `capxure.cli.capture.process_repo` with an async stub that returns c
   - `ProcessResult(outcome=UpsertOutcome.UNCHANGED, ...)` → exit 0
   - `ProcessResult(outcome=None, error="...")` → exit 1 (error already surfaced via callback, not reprinted)
 - Parse-error path: passing a malformed target (e.g., `"not-a-repo"`) exits 3 *without* invoking the monkeypatched `process_repo` (verify the stub was not called).
-- `KeyboardInterrupt` path: monkeypatch `asyncio.run` to raise `KeyboardInterrupt`, assert exit 130 and `interrupted` on stderr.
+- `KeyboardInterrupt` path: let the real `asyncio.run` drive an awaited coroutine whose inner `process_repo` raises `KeyboardInterrupt`; assert the CLI's `try/except KeyboardInterrupt` maps it to exit 130 with `interrupted` on stderr. (Monkeypatching `asyncio.run` directly works too but doesn't exercise the real propagation path and leaks a never-awaited coroutine warning.)
 
 Uses pytest `capsys` for stdout/stderr assertions and `monkeypatch` for env vars. No network, no real disk beyond `tmp_path` for `Storage`.
 
