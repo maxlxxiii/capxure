@@ -17,9 +17,24 @@ pip install -e '.[dev]'
 pytest
 ```
 
-## Usage
+## CLI
 
-`capxure` is a pure library — there is no CLI or console script. Your consumer code is responsible for obtaining a GitHub personal-access token (e.g., via `python-dotenv`, your shell environment, or a secrets manager) and passing it to `GitHubClient`.
+Installing capxure adds a `cap` console script for ad-hoc captures:
+
+```
+export GITHUB_TOKEN=ghp_...        # or GH_TOKEN
+cap owner/repo                     # capture by shorthand
+cap https://github.com/owner/repo  # or by full URL
+cap owner/repo --data-dir ~/caps   # override storage location
+```
+
+Progress events print to stderr (`info: Fetching metadata…`, `success: owner/repo: captured successfully`). stdout is reserved for future subcommands (`list`, `show`) that will produce structured output.
+
+Exit codes: `0` success (including dedup-skip), `1` library-reported failure or missing token, `2` usage error, `3` malformed target, `130` Ctrl-C.
+
+## Library usage
+
+For programmatic use, import directly. Your consumer code is responsible for obtaining a GitHub personal-access token (e.g., via `python-dotenv`, your shell environment, or a secrets manager) and passing it to `GitHubClient`.
 
 ```python
 import asyncio
@@ -95,6 +110,12 @@ with Storage() as storage:
 The `data/` directory at the repo root contains historical fixtures from the pre-SQLite era (`metadata.json`, `readmes/`, `awesome-lists/`). The library no longer reads any of them.
 
 ## Changelog
+
+### 0.3.0
+
+- New `cap` console script (installed via `[project.scripts]`). First subcommand: `cap <target>` captures a repo. Targets accept full URLs or bare `owner/repo` shorthand.
+- `capxure.github.parse_github_url` regex broadened so bare `owner/repo` also parses (the `github.com/` prefix is now optional). No behavior change for inputs the old regex accepted.
+- New public module `capxure.cli` exposing `main()` and `build_parser()`. Not re-exported from the top-level package — users of the library directly should keep importing from `capxure` as before.
 
 ### 0.2.0
 
