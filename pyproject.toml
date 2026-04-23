@@ -18,6 +18,9 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
+[project.scripts]
+cap = "capxure.cli:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/capxure"]
 
