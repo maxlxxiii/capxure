@@ -8,7 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Sequence
 
 from platformdirs import user_data_dir
 
@@ -392,15 +392,73 @@ class Storage:
         ).fetchone()
         return self._row_to_repo(row) if row is not None else None
 
-    def list_repos(self) -> list[Repo]:
-        rows = self._conn.execute(
-            "SELECT * FROM repos ORDER BY github_id ASC"
-        ).fetchall()
+    _SORT_COLUMNS: dict[str, str] = {
+        "synced": "last_synced_at",
+        "captured": "captured_at",
+        "stars": "stars",
+    }
+
+    def list_repos(
+        self,
+        *,
+        sort: Literal["synced", "captured", "stars"] = "synced",
+        reverse: bool = False,
+        topics: Sequence[str] | None = None,
+        limit: int | None = None,
+    ) -> list[Repo]:
+        """List repos with optional sort, topic filter, and limit.
+
+        Default order is by `last_synced_at` descending, with `github_id`
+        ascending as a tie-break for determinism. Topic filter matches
+        case-insensitive exact topic names and combines multiple values
+        with OR semantics (deduplicated).
+        """
+        column = self._SORT_COLUMNS[sort]
+        direction = "ASC" if reverse else "DESC"
+
+        params: list[Any] = []
+        sql_parts = ["SELECT DISTINCT repos.* FROM repos"]
+        if topics:
+            placeholders = ",".join("?" for _ in topics)
+            sql_parts.append(
+                f"INNER JOIN repo_topics ON repo_topics.repo_id = repos.id "
+                f"WHERE LOWER(repo_topics.topic) IN ({placeholders})"
+            )
+            params.extend(t.lower() for t in topics)
+        sql_parts.append(f"ORDER BY {column} {direction}, repos.github_id ASC")
+        if limit is not None:
+            sql_parts.append("LIMIT ?")
+            params.append(limit)
+
+        rows = self._conn.execute(" ".join(sql_parts), params).fetchall()
         return [self._row_to_repo(row) for row in rows]
 
     def count_repos(self) -> int:
         cur = self._conn.execute("SELECT COUNT(*) FROM repos")
         return cur.fetchone()[0]
+
+    def list_topic_counts(
+        self,
+        *,
+        reverse: bool = False,
+        limit: int | None = None,
+    ) -> list[tuple[str, int]]:
+        """Return (topic, count) pairs across all captured repos.
+
+        Default order: count descending, then topic ascending as tie-break.
+        `reverse=True` flips to count ascending, topic ascending.
+        """
+        direction = "ASC" if reverse else "DESC"
+        sql = (
+            "SELECT topic, COUNT(*) AS c FROM repo_topics "
+            "GROUP BY topic "
+            f"ORDER BY c {direction}, topic ASC"
+        )
+        params: list[Any] = []
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return [(row["topic"], row["c"]) for row in self._conn.execute(sql, params).fetchall()]
 
     def get_metadata_json(self, owner: str, name: str) -> dict[str, Any] | None:
         row = self._conn.execute(

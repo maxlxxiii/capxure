@@ -334,9 +334,9 @@ def test_list_and_count_repos(db_path, claude_mem_metadata, awesome_nodejs_metad
         assert len(repos) == 3
         assert all(isinstance(r, Repo) for r in repos)
 
-        # Deterministic order: by github_id ascending.
-        ids = [r.github_id for r in repos]
-        assert ids == sorted(ids)
+        # Deterministic order: by last_synced_at descending (ties broken by github_id ascending).
+        syncs = [r.last_synced_at for r in repos]
+        assert syncs == sorted(syncs, reverse=True)
 
         # Each Repo carries its topics populated from the junction table.
         claude_repo = next(r for r in repos if r.github_id == claude_mem_metadata["id"])
@@ -402,5 +402,153 @@ def test_get_repo_and_get_repo_by_github_id(db_path, claude_mem_metadata):
         # Not-found paths.
         assert storage.get_repo("nobody", "nope") is None
         assert storage.get_repo_by_github_id(-1) is None
+    finally:
+        storage.close()
+
+
+def test_list_repos_sort_by_stars_desc(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        repos = storage.list_repos(sort="stars")
+        stars = [r.stars for r in repos]
+        assert stars == sorted(stars, reverse=True)
+    finally:
+        storage.close()
+
+
+def test_list_repos_sort_by_stars_reverse(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        repos = storage.list_repos(sort="stars", reverse=True)
+        stars = [r.stars for r in repos]
+        assert stars == sorted(stars)
+    finally:
+        storage.close()
+
+
+def test_list_repos_sort_by_captured_desc(db_path, claude_mem_metadata, awesome_nodejs_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+
+        repos = storage.list_repos(sort="captured")
+        caps = [r.captured_at for r in repos]
+        assert caps == sorted(caps, reverse=True)
+    finally:
+        storage.close()
+
+
+def test_list_repos_topic_filter_case_insensitive(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    """Topics match exactly but case-insensitively."""
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        # Pick a topic we know is on the claude_mem fixture; query with weird casing.
+        known_topic = claude_mem_metadata["topics"][0]
+        repos = storage.list_repos(topics=[known_topic.upper()])
+        assert len(repos) >= 1
+        assert all(known_topic in r.topics for r in repos)
+    finally:
+        storage.close()
+
+
+def test_list_repos_topic_filter_or_semantics(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    """Multiple --topic values combine with OR and deduplicate rows."""
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        # Pick one topic from two different repos.
+        t1 = claude_mem_metadata["topics"][0]
+        t2 = awesome_nodejs_metadata["topics"][0]
+        repos = storage.list_repos(topics=[t1, t2])
+        # At minimum, both source repos should be in the result set.
+        github_ids = {r.github_id for r in repos}
+        assert claude_mem_metadata["id"] in github_ids
+        assert awesome_nodejs_metadata["id"] in github_ids
+        # And no duplicates: len(ids) == len(set(ids)).
+        assert len(github_ids) == len(repos)
+    finally:
+        storage.close()
+
+
+def test_list_repos_topic_filter_no_match_returns_empty(db_path, claude_mem_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata, "r1")
+        repos = storage.list_repos(topics=["definitely-not-a-real-topic-zzz"])
+        assert repos == []
+    finally:
+        storage.close()
+
+
+def test_list_repos_limit_caps_result(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        repos = storage.list_repos(limit=2)
+        assert len(repos) == 2
+    finally:
+        storage.close()
+
+
+def test_list_topic_counts_desc_with_name_tiebreak(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        counts = storage.list_topic_counts()
+        # Counts must be non-increasing.
+        values = [c for _, c in counts]
+        assert values == sorted(values, reverse=True)
+
+        # For any two adjacent entries with equal counts, topic names are ascending.
+        for (t1, c1), (t2, c2) in zip(counts, counts[1:]):
+            if c1 == c2:
+                assert t1 < t2
+    finally:
+        storage.close()
+
+
+def test_list_topic_counts_limit_and_reverse(db_path, claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata):
+    storage = Storage(db_path)
+    try:
+        storage.upsert(claude_mem_metadata,    "r1")
+        storage.upsert(awesome_nodejs_metadata, "r2")
+        storage.upsert(chunky_metadata,         "r3")
+
+        limited = storage.list_topic_counts(limit=3)
+        assert len(limited) <= 3
+
+        reversed_counts = storage.list_topic_counts(reverse=True)
+        values = [c for _, c in reversed_counts]
+        assert values == sorted(values)  # ascending
+    finally:
+        storage.close()
+
+
+def test_list_topic_counts_empty_db(db_path):
+    storage = Storage(db_path)
+    try:
+        assert storage.list_topic_counts() == []
     finally:
         storage.close()
