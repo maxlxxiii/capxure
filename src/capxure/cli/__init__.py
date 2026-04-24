@@ -24,8 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Capture is the default action: `cap owner/repo` invokes it without a keyword.
     # We register it here so --help lists it, and we also wire it as the fallback
     # below when the user types `cap owner/repo` directly.
-    from capxure.cli import capture
+    from capxure.cli import capture, list_
     capture.register(subparsers)
+    list_.register(subparsers)
 
     return parser
 
