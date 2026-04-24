@@ -258,6 +258,29 @@ def test_format_pretty_topics_empty_sends_stderr_message(capsys):
     assert "No topics" in out.err
 
 
+def test_format_pretty_repos_header_and_rule_same_width_as_data(capsys):
+    """Regression guard: header, rule, and data rows must share a common width.
+
+    The previous bug rendered `last_synced` (11 chars) into a 10-wide date column,
+    making the header 1 char wider than the rule and data rows, which shifted every
+    column to the right of it out of alignment.
+    """
+    repo = _mk_repo(
+        owner="oct",
+        name="hello",
+        stars=42,
+        last_synced_at="2026-04-01T00:00:00",
+        description="desc",
+    )
+    _format_pretty_repos([repo], terminal_width=120)
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) >= 3
+    header, rule, data = lines[0], lines[1], lines[2]
+    # Same width guarantees columns line up. Before the fix, header was 1 char longer.
+    assert len(header) == len(rule)
+    assert len(rule) == len(data)
+
+
 # --- _resolve_format tests --------------------------------------------------
 
 

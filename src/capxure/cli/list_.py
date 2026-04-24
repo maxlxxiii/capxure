@@ -142,7 +142,7 @@ def _format_pretty_repos(repos: list[Repo], *, terminal_width: int) -> None:
         print("No repos captured.", file=sys.stderr)
         return
 
-    date_w = 10  # fixed YYYY-MM-DD
+    date_w = max(len("last_synced"), 10)  # header is 11 chars; values are YYYY-MM-DD (10)
     owner_vals = [_truncate(r.owner, _PRETTY_OWNER_CAP) for r in repos]
     name_vals = [_truncate(r.name, _PRETTY_NAME_CAP) for r in repos]
     stars_vals = [str(r.stars) for r in repos]
