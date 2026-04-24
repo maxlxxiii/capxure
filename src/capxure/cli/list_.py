@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import textwrap
 from typing import IO, Literal
@@ -15,6 +16,8 @@ Format = Literal["pretty", "plain"]
 _PRETTY_OWNER_CAP = 20
 _PRETTY_NAME_CAP = 30
 _MIN_DESCRIPTION_WIDTH = 12
+
+_WHITESPACE_RUN = re.compile(r"\s+")
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -205,3 +208,38 @@ def _format_pretty_topics(rows: list[tuple[str, int]], *, terminal_width: int) -
     print(rule)
     for topic, count in rows:
         print(f"{count:>{count_w}} {topic:<{topic_w}}")
+
+
+def _scrub_description(text: str | None) -> str:
+    """Strip tabs/newlines/CR and collapse any whitespace run to a single space.
+
+    Lossy but safe — plain output is tab-separated, so embedded tabs or newlines
+    would break downstream `awk`/`cut`/`fzf` consumers. Callers of this helper
+    know the trade-off.
+    """
+    if not text:
+        return ""
+    return _WHITESPACE_RUN.sub(" ", text).strip()
+
+
+def _format_plain_repos(repos: list[Repo]) -> None:
+    """One TSV row per repo, no header. Nine fields in spec order."""
+    for r in repos:
+        fields = [
+            str(r.id),
+            str(r.github_id),
+            r.full_name,
+            _scrub_description(r.description),
+            r.language or "",
+            str(r.stars),
+            r.pushed_at or "",
+            r.captured_at,
+            r.last_synced_at,
+        ]
+        print("\t".join(fields))
+
+
+def _format_plain_topics(rows: list[tuple[str, int]]) -> None:
+    """One `topic<TAB>count` row per entry, no header."""
+    for topic, count in rows:
+        print(f"{topic}\t{count}")

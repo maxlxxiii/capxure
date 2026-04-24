@@ -303,3 +303,99 @@ def test_resolve_format_auto_picks_pretty_for_tty():
 
 def test_resolve_format_auto_picks_plain_for_pipe():
     assert _resolve_format(None, _FakeStream(is_tty=False)) == "plain"
+
+
+# --- Plain renderer tests ---------------------------------------------------
+
+from capxure.cli.list_ import (
+    _format_plain_repos,
+    _format_plain_topics,
+    _scrub_description,
+)
+
+
+def test_scrub_description_removes_tabs_and_newlines():
+    assert _scrub_description("a\tb\nc\rd") == "a b c d"
+
+
+def test_scrub_description_collapses_runs_of_spaces():
+    assert _scrub_description("a  \t\n  b") == "a b"
+
+
+def test_scrub_description_none_returns_empty_string():
+    assert _scrub_description(None) == ""
+
+
+def test_scrub_description_strips_leading_trailing_whitespace():
+    assert _scrub_description("  hello  ") == "hello"
+
+
+def test_format_plain_repos_empty_produces_no_output(capsys):
+    _format_plain_repos([])
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == ""
+
+
+def test_format_plain_repos_emits_nine_fields_tab_separated(capsys):
+    repo = _mk_repo(
+        id=42,
+        github_id=100,
+        owner="octo",
+        name="hi",
+        stars=7,
+        description="ok",
+        language="Python",
+        pushed_at="2026-01-01T00:00:00Z",
+        captured_at="2026-02-02T00:00:00",
+        last_synced_at="2026-03-03T00:00:00",
+    )
+
+    _format_plain_repos([repo])
+    out = capsys.readouterr().out.strip("\n")
+    parts = out.split("\t")
+    assert parts == [
+        "42",
+        "100",
+        "octo/hi",
+        "ok",
+        "Python",
+        "7",
+        "2026-01-01T00:00:00Z",
+        "2026-02-02T00:00:00",
+        "2026-03-03T00:00:00",
+    ]
+
+
+def test_format_plain_repos_null_fields_render_empty(capsys):
+    repo = _mk_repo(description=None, language=None, pushed_at=None)
+    _format_plain_repos([repo])
+    parts = capsys.readouterr().out.strip("\n").split("\t")
+    # Fields 3 (desc), 4 (language), 6 (pushed_at) should be empty strings.
+    assert parts[3] == ""
+    assert parts[4] == ""
+    assert parts[6] == ""
+
+
+def test_format_plain_repos_scrubs_description_whitespace(capsys):
+    repo = _mk_repo(description="line1\tline2\nline3")
+    _format_plain_repos([repo])
+    # After scrubbing, the description field should not contain raw tabs/newlines.
+    line = capsys.readouterr().out.strip("\n")
+    parts = line.split("\t")
+    # There should be exactly 9 fields — no rogue tab inside description.
+    assert len(parts) == 9
+    assert "\n" not in parts[3]
+
+
+def test_format_plain_topics_emits_topic_tab_count(capsys):
+    _format_plain_topics([("ml", 5), ("nlp", 2)])
+    lines = capsys.readouterr().out.strip("\n").splitlines()
+    assert lines == ["ml\t5", "nlp\t2"]
+
+
+def test_format_plain_topics_empty_produces_no_output(capsys):
+    _format_plain_topics([])
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == ""
