@@ -32,6 +32,20 @@ Progress events print to stderr (`info: Fetching metadata…`, `success: owner/r
 
 Exit codes: `0` success (including dedup-skip), `1` library-reported failure or missing token, `2` usage error, `3` malformed target, `130` Ctrl-C.
 
+### Listing captured repos
+
+```
+cap ls                             # pretty table on a TTY, TSV when piped
+cap ls -s stars -r                 # least-starred first
+cap ls -t ml -t nlp -l 25          # repos tagged ml OR nlp, top 25
+cap ls topics                      # topic counts, descending
+cap ls --format plain              # force TSV (9 fields per repo)
+```
+
+Plain output is tab-separated and intended for scripts; the description field has tabs/newlines collapsed to spaces so downstream `awk` / `cut` / `fzf` parse cleanly. Use `CAPXURE_DATA_DIR` to target a non-default db.
+
+Exit codes for `ls`: `0` success (including empty results), `2` usage error, `130` Ctrl-C.
+
 ## Library usage
 
 For programmatic use, import directly. Your consumer code is responsible for obtaining a GitHub personal-access token (e.g., via `python-dotenv`, your shell environment, or a secrets manager) and passing it to `GitHubClient`.
@@ -93,6 +107,8 @@ with Storage() as storage:
     if repo is not None:
         print(repo.stars, repo.topics)
 
+    # Default order is last_synced_at DESC; pass sort=/reverse=/topics=/limit=
+    # to customize. Zero-arg call still returns every row.
     all_repos = storage.list_repos()
 ```
 

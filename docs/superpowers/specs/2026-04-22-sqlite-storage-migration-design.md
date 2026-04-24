@@ -396,6 +396,8 @@ Infrastructure:
 11. Nullable README: `readme_content=None` round-trips; `readme_sha is None`.
 12. `list_repos` / `count_repos` with N repos return correct counts and
     deterministic order (by `github_id`).
+
+> **Update 2026-04-24:** default order is now `last_synced_at DESC` (with `github_id` ASC as tie-break). See `2026-04-24-cli-ls-design.md`.
 13. `get_metadata_json` round-trips the full blob.
 14. Escape-hatch connection: `storage.connection.execute(...)` returns
     expected rows.

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import sys
 import textwrap
 from typing import IO, Literal
 
-from capxure.storage import Repo
+from capxure.storage import Repo, Storage
 
 
 Format = Literal["pretty", "plain"]
@@ -72,8 +73,47 @@ def command(args: argparse.Namespace) -> int:
     if preflight != 0:
         return preflight
 
-    # Wiring to Storage and renderers is added in Task 5. For now, return 0.
+    fmt = _resolve_format(args.format, sys.stdout)
+    limit = args.limit if args.limit is not None else 10
+
+    try:
+        with Storage() as storage:
+            if args.subject == "topics":
+                topic_rows = storage.list_topic_counts(
+                    reverse=args.reverse,
+                    limit=limit,
+                )
+                if fmt == "pretty":
+                    width = _terminal_width_for(fmt)
+                    _format_pretty_topics(topic_rows, terminal_width=width)
+                else:
+                    _format_plain_topics(topic_rows)
+            else:
+                repos = storage.list_repos(
+                    sort=args.sort if args.sort is not None else "synced",
+                    reverse=args.reverse,
+                    topics=args.topics or None,
+                    limit=limit,
+                )
+                if fmt == "pretty":
+                    width = _terminal_width_for(fmt)
+                    _format_pretty_repos(repos, terminal_width=width)
+                else:
+                    _format_plain_repos(repos)
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130
+
     return 0
+
+
+def _terminal_width_for(fmt: Format) -> int:
+    """Return the render width to use. Pretty mode on a non-TTY falls back to 100."""
+    if fmt != "pretty":
+        return 100
+    if sys.stdout.isatty():
+        return shutil.get_terminal_size(fallback=(100, 24)).columns
+    return 100
 
 
 # --- helpers ---
