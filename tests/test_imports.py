@@ -6,6 +6,7 @@ import capxure
 
 EXPECTED_EXPORTS = {
     "AuthenticationError",
+    "Database",
     "DuplicateRepoNameError",
     "GitHubClient",
     "GitHubError",
@@ -14,9 +15,9 @@ EXPECTED_EXPORTS = {
     "RateLimitExceededError",
     "RateLimitInfo",
     "Repo",
+    "RepoStore",
     "Severity",
     "StatusCallback",
-    "Storage",
     "UnsupportedSchemaError",
     "UpsertOutcome",
     "__version__",
@@ -38,3 +39,8 @@ def test_removed_symbols_are_gone():
     assert not hasattr(capxure, "DeduplicationResult"), (
         "DeduplicationResult was removed in the SQLite migration; do not re-add"
     )
+
+
+def test_storage_class_removed():
+    """Storage is gone — use Database + RepoStore."""
+    assert not hasattr(capxure, "Storage")

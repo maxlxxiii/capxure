@@ -1,4 +1,4 @@
-"""End-to-end smoke tests for `cap ls` — real Storage, real argv path."""
+"""End-to-end smoke tests for `cap ls` — real Database, real argv path."""
 from __future__ import annotations
 
 import subprocess
@@ -7,16 +7,16 @@ import sys
 import pytest
 
 from capxure.cli import main
-from capxure.storage import Storage
+from capxure.db import Database
 
 
 def _seed(db_path, metadata_list):
-    storage = Storage(db_path)
+    db = Database(db_path)
     try:
         for i, md in enumerate(metadata_list):
-            storage.upsert(md, f"readme-{i}")
+            db.repos.upsert(md, f"readme-{i}")
     finally:
-        storage.close()
+        db.close()
 
 
 def test_cli_ls_help_exits_zero():

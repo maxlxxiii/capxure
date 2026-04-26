@@ -1,5 +1,6 @@
 """capxure - Capture GitHub repos locally."""
 
+from capxure.db import Database, UnsupportedSchemaError
 from capxure.git.client import (
     AuthenticationError,
     GitHubClient,
@@ -15,18 +16,18 @@ from capxure.git.processor import (
     StatusCallback,
     process_repo,
 )
-from capxure.storage import (
+from capxure.git.store import (
     DuplicateRepoNameError,
     Repo,
-    Storage,
-    UnsupportedSchemaError,
+    RepoStore,
     UpsertOutcome,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "AuthenticationError",
+    "Database",
     "DuplicateRepoNameError",
     "GitHubClient",
     "GitHubError",
@@ -35,9 +36,9 @@ __all__ = [
     "RateLimitExceededError",
     "RateLimitInfo",
     "Repo",
+    "RepoStore",
     "Severity",
     "StatusCallback",
-    "Storage",
     "UnsupportedSchemaError",
     "UpsertOutcome",
     "__version__",
