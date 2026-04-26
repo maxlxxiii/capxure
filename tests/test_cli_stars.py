@@ -467,3 +467,124 @@ class TestCommandErrorHandling:
         err = capsys.readouterr().err
         assert "no TTY" in err
         assert "captured: 0" in err
+
+    def test_capture_loop_aborts_on_mid_loop_auth_failure(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """If a token expires mid-batch, process_repo returns the auth error.
+        The handler should break the loop, print the partial summary."""
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [
+            ("alice", "repo1", "https://github.com/alice/repo1"),
+            ("bob", "repo2", "https://github.com/bob/repo2"),
+            ("carol", "repo3", "https://github.com/carol/repo3"),
+        ]
+        process_repo_calls: list[str] = []
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            owner, repo = url.removeprefix("https://github.com/").split("/")
+            process_repo_calls.append(repo)
+            if repo == "repo1":
+                # First repo succeeds
+                return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
+            if repo == "repo2":
+                # Token dies on the second repo
+                return ProcessResult(
+                    owner=owner, repo=repo, outcome=None,
+                    error="Authentication failed — invalid or missing GITHUB_TOKEN",
+                )
+            # Loop should abort before reaching repo3
+            return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 1  # failed > 0
+        assert process_repo_calls == ["repo1", "repo2"]  # repo3 NOT called
+        err = capsys.readouterr().err
+        assert "✓ alice/repo1" in err
+        assert "✗ bob/repo2 (auth)" in err  # short tag
+        assert "carol/repo3" not in err  # never attempted
+        # Summary reflects partial state
+        assert "captured: 1" in err
+        assert "failed: 1" in err
+
+    def test_capture_loop_aborts_on_mid_loop_rate_limit(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [
+            ("alice", "repo1", "https://github.com/alice/repo1"),
+            ("bob", "repo2", "https://github.com/bob/repo2"),
+        ]
+        process_repo_calls: list[str] = []
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            owner, repo = url.removeprefix("https://github.com/").split("/")
+            process_repo_calls.append(repo)
+            return ProcessResult(
+                owner=owner, repo=repo, outcome=None,
+                error="GitHub API rate limit exceeded — wait and retry",
+            )
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 1
+        assert process_repo_calls == ["repo1"]  # repo2 not attempted
+        err = capsys.readouterr().err
+        assert "✗ alice/repo1 (rate limit)" in err
+        assert "captured: 0" in err
+        assert "failed: 1" in err
+
+
+from capxure.cli.stars import _short_tag
+
+
+class TestShortTag:
+    def test_none_returns_error(self):
+        assert _short_tag(None) == "error"
+
+    def test_empty_string_returns_error(self):
+        assert _short_tag("") == "error"
+
+    def test_not_found_maps_to_404(self):
+        assert _short_tag("Repository alice/repo1 not found on GitHub") == "404"
+
+    def test_rate_limit_maps_to_rate_limit(self):
+        assert _short_tag("GitHub API rate limit exceeded — wait and retry") == "rate limit"
+
+    def test_auth_failure_maps_to_auth(self):
+        assert _short_tag("Authentication failed — invalid or missing GITHUB_TOKEN") == "auth"
+
+    def test_generic_error_truncated_at_em_dash(self):
+        # Generic case: keep the first segment before the em-dash or colon
+        assert _short_tag("Something went wrong — internal detail") == "Something went wrong"
+
+    def test_generic_error_truncated_at_colon(self):
+        assert _short_tag("Error fetching alice/repo1: connection refused") == "Error fetching alice/repo1"
+
+    def test_generic_short_error_unchanged(self):
+        assert _short_tag("oops") == "oops"
+
+    def test_generic_long_error_truncated_to_40_chars(self):
+        # Fallback: truncate at 40 chars when no separator is present
+        long_err = "a" * 80
+        result = _short_tag(long_err)
+        assert len(result) <= 40

@@ -116,9 +116,15 @@ def command(args: argparse.Namespace) -> int:
                         print(f"✓ {owner}/{name}", file=sys.stderr, flush=True)
                 else:
                     failed += 1
+                    tag = _short_tag(result.error)
                     if not args.quiet:
-                        tag = result.error or "error"
                         print(f"✗ {owner}/{name} ({tag})", file=sys.stderr, flush=True)
+                    if _is_fatal_loop_error(result.error):
+                        print(
+                            f"error: aborting — {tag} affects every remaining repo",
+                            file=sys.stderr,
+                        )
+                        break
 
             return (captured, len(already), failed)
 
@@ -161,6 +167,42 @@ def _silent_status(message: str, severity: Severity) -> None:
     """StatusCallback that drops everything — per-repo log lines come from this handler,
     not from process_repo's internal status events."""
     return None
+
+
+def _short_tag(error: str | None) -> str:
+    """Map a process_repo error string to a compact tag for per-repo log lines.
+
+    Known patterns get short labels (404, auth, rate limit). Generic errors
+    are truncated at the first em-dash or colon, then to 40 chars as a fallback.
+    """
+    if not error:
+        return "error"
+    if "not found on GitHub" in error:
+        return "404"
+    if "rate limit" in error.lower():
+        return "rate limit"
+    if "Authentication failed" in error:
+        return "auth"
+    for sep in ("—", ":"):
+        if sep in error:
+            return error.split(sep, 1)[0].strip()
+    return error[:40]
+
+
+def _is_fatal_loop_error(error: str | None) -> bool:
+    """True if a per-repo error implies every subsequent capture will also fail.
+
+    Auth and rate-limit errors are fatal — keep grinding through 200 repos
+    when the token is dead just burns the rate limit budget. A 404 (renamed
+    or deleted repo) is local to that repo and the loop should continue.
+    """
+    if not error:
+        return False
+    if "rate limit" in error.lower():
+        return True
+    if "Authentication failed" in error:
+        return True
+    return False
 
 
 class _ListPhaseAbort(Exception):
