@@ -70,7 +70,7 @@ Capture 166 repos? [y/N]
 With `--limit 20`:
 
 ```
-Found 213 starred repos (limited to 20).
+Found 213 starred repos for max-freeman (limited to 20).
   · 5 already captured
   · 15 new
 Capture 15 repos? [y/N]
