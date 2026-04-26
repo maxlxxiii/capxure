@@ -6,9 +6,9 @@ import sys
 
 
 def test_stars_help_exits_zero_and_lists_flags():
-    """`python -m capxure.cli stars --help` prints usage with all flags."""
+    """`python -m capxure.cli git stars --help` prints usage with all flags."""
     result = subprocess.run(
-        [sys.executable, "-m", "capxure.cli", "stars", "--help"],
+        [sys.executable, "-m", "capxure.cli", "git", "stars", "--help"],
         capture_output=True,
         text=True,
     )
@@ -24,9 +24,9 @@ def test_stars_help_exits_zero_and_lists_flags():
 
 
 def test_stars_top_level_help_lists_subcommand():
-    """`cap --help` mentions `stars` alongside the other subcommands."""
+    """`cap git --help` mentions `stars` alongside the other subcommands."""
     result = subprocess.run(
-        [sys.executable, "-m", "capxure.cli", "--help"],
+        [sys.executable, "-m", "capxure.cli", "git", "--help"],
         capture_output=True,
         text=True,
     )

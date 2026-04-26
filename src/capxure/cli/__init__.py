@@ -1,59 +1,42 @@
-"""Command-line interface for capxure. Thin consumer of the public library API."""
+"""Command-line interface for capxure. Top-level router only."""
+
 from __future__ import annotations
 
 import argparse
 import sys
 from typing import Sequence
 
+from capxure.cli import git
+
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level `cap` parser.
-
-    Dispatch rule: the first positional is a capture target (handled by the capture
-    subcommand). Future subcommands (list, show) will be registered on the subparsers
-    group, and argparse routes to them when the first positional matches a registered
-    name. Capture targets always contain `/`; subcommand names never will — so the two
-    never collide.
-    """
+    """Build the top-level `cap` parser. Routes to subcommand groups only."""
     parser = argparse.ArgumentParser(
         prog="cap",
-        description="Capture GitHub repos locally.",
+        description="capxure — capture and organize.",
     )
-    subparsers = parser.add_subparsers(dest="subcommand")
+    subparsers = parser.add_subparsers(dest="domain", metavar="{git}")
 
-    # Capture is the default action: `cap owner/repo` invokes it without a keyword.
-    # We register it here so --help lists it, and we also wire it as the fallback
-    # below when the user types `cap owner/repo` directly.
-    from capxure.cli.git import capture, ls, stars
-    capture.register(subparsers)
-    ls.register(subparsers)
-    stars.register(subparsers)
+    git_parser = subparsers.add_parser(
+        "git",
+        help="GitHub repo capture commands (capture, ls, stars).",
+        add_help=False,  # Defer --help to the git-level parser.
+    )
+    git_parser.set_defaults(_domain="git")
 
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point for the `cap` console script.
-
-    Returns a process exit code. Accepts an `argv` list for testability.
-    """
-    parser = build_parser()
-    argv = list(sys.argv[1:] if argv is None else argv)
-
-    if not argv:
-        parser.print_help(sys.stderr)
+    """Entry point for the `cap` console script."""
+    args_list = list(argv) if argv is not None else sys.argv[1:]
+    if not args_list:
+        build_parser().print_usage(sys.stderr)
         return 2
 
-    # Dispatch rule: if the first positional contains `/`, it's a capture target.
-    # Rewrite the argv to prepend the "capture" subcommand name so argparse can
-    # route it through the registered handler.
-    if "/" in argv[0]:
-        argv = ["capture", *argv]
+    if args_list[0] == "git":
+        return git.main(args_list[1:])
 
-    args = parser.parse_args(argv)
-
-    handler = getattr(args, "handler", None)
-    if handler is None:
-        parser.print_help(sys.stderr)
-        return 2
-    return handler(args)
+    # Anything else → argparse rejects with "invalid choice".
+    build_parser().parse_args(args_list)
+    return 2  # Unreachable: parse_args raises SystemExit on invalid input.

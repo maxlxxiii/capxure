@@ -20,22 +20,6 @@ def test_cli_runs_as_module_with_no_args_exits_2():
     assert result.returncode == 2
 
 
-def test_parser_accepts_capture_subcommand_with_target():
-    """`cap capture owner/repo` parses cleanly via the capture subparser."""
-    parser = build_parser()
-    args = parser.parse_args(["capture", "owner/repo"])
-    assert args.subcommand == "capture"
-    assert args.target == "owner/repo"
-    assert args.data_dir is None
-
-
-def test_parser_accepts_capture_with_data_dir_flag(tmp_path):
-    parser = build_parser()
-    args = parser.parse_args(["capture", f"--data-dir={tmp_path}", "owner/repo"])
-    assert args.data_dir == str(tmp_path)
-    assert args.target == "owner/repo"
-
-
 def test_main_with_no_args_returns_2(capsys):
     """`cap` (no args) prints help to stderr and returns 2."""
     assert main([]) == 2
@@ -308,32 +292,10 @@ class TestCommandErrorPaths:
 
 
 class TestMainDispatch:
-    """`main(['owner/repo'])` must route through the capture handler via argv rewrite."""
-
-    def test_slash_target_routes_to_capture(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
-        process_repo_mock.return_value = ProcessResult(
-            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
-        )
-
-        assert main(["owner/repo"]) == 0
-        process_repo_mock.assert_called_once()
-        assert process_repo_mock.call_args.args == ("owner/repo",)
-
-    def test_url_target_routes_to_capture(self, monkeypatch):
-        monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
-        process_repo_mock.return_value = ProcessResult(
-            owner="owner", repo="repo", outcome=UpsertOutcome.NEW
-        )
-
-        url = "https://github.com/owner/repo"
-        assert main([url]) == 0
-        assert process_repo_mock.call_args.args == (url,)
+    """Top-level `main` rejects unknown subcommands; routing tests live in tests/cli/test_dispatcher.py."""
 
     def test_unknown_subcommand_exits_2(self, capsys):
-        """A bare word without `/` isn't a capture target; argparse rejects it as an unknown subcommand and exits 2."""
+        """A bare word isn't a known subcommand; argparse rejects it and exits 2."""
         with pytest.raises(SystemExit) as exc_info:
             main(["gibberish"])
         assert exc_info.value.code == 2

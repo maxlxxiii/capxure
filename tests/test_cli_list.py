@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from capxure.cli import build_parser, main
+from capxure.cli.git import build_parser, main
 
 
 # --- Parser-level tests -----------------------------------------------------

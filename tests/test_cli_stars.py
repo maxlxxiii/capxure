@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from capxure import ProcessResult, UpsertOutcome
-from capxure.cli import build_parser
+from capxure.cli.git import build_parser
 from capxure.cli.git.stars import _confirm
 from capxure.git.client import (
     AuthenticationError,

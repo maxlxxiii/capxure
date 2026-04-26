@@ -20,9 +20,9 @@ def _seed(db_path, metadata_list):
 
 
 def test_cli_ls_help_exits_zero():
-    """`cap ls --help` prints usage and exits 0."""
+    """`cap git ls --help` prints usage and exits 0."""
     result = subprocess.run(
-        [sys.executable, "-m", "capxure.cli", "ls", "--help"],
+        [sys.executable, "-m", "capxure.cli", "git", "ls", "--help"],
         capture_output=True,
         text=True,
     )
@@ -44,7 +44,7 @@ def test_cli_ls_plain_output_shape(
 
     _seed(db_dir / "capxure.db", [claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata])
 
-    assert main(["ls", "--format", "plain"]) == 0
+    assert main(["git", "ls", "--format", "plain"]) == 0
     out_lines = capsys.readouterr().out.rstrip("\n").splitlines()
     assert len(out_lines) == 3
     for line in out_lines:
@@ -62,7 +62,7 @@ def test_cli_ls_pretty_output_contains_repos(
 
     _seed(db_dir / "capxure.db", [claude_mem_metadata, awesome_nodejs_metadata])
 
-    assert main(["ls", "--format", "pretty"]) == 0
+    assert main(["git", "ls", "--format", "pretty"]) == 0
     out = capsys.readouterr().out
     # Header + separator + 2 data rows (at minimum; description wraps may add more).
     assert "owner" in out and "name" in out and "stars" in out
@@ -79,7 +79,7 @@ def test_cli_ls_topics_plain(
     monkeypatch.setenv("CAPXURE_DATA_DIR", str(db_dir))
     _seed(db_dir / "capxure.db", [claude_mem_metadata, awesome_nodejs_metadata, chunky_metadata])
 
-    assert main(["ls", "topics", "--format", "plain"]) == 0
+    assert main(["git", "ls", "topics", "--format", "plain"]) == 0
     lines = capsys.readouterr().out.rstrip("\n").splitlines()
     assert len(lines) >= 1
     for line in lines:
@@ -95,7 +95,7 @@ def test_cli_ls_empty_repos_pretty_writes_stderr_message(
     db_dir.mkdir()
     monkeypatch.setenv("CAPXURE_DATA_DIR", str(db_dir))
 
-    assert main(["ls", "--format", "pretty"]) == 0
+    assert main(["git", "ls", "--format", "pretty"]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "No repos" in captured.err
@@ -108,7 +108,7 @@ def test_cli_ls_empty_repos_plain_is_silent(
     db_dir.mkdir()
     monkeypatch.setenv("CAPXURE_DATA_DIR", str(db_dir))
 
-    assert main(["ls", "--format", "plain"]) == 0
+    assert main(["git", "ls", "--format", "plain"]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
