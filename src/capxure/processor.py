@@ -16,7 +16,7 @@ from capxure.github import (
     RateLimitExceededError,
     parse_github_url,
 )
-from capxure.storage import Storage, UpsertOutcome
+from capxure.git.store import RepoStore, UpsertOutcome
 
 
 class Severity(StrEnum):
@@ -41,7 +41,7 @@ async def process_repo(
     url: str,
     *,
     github: GitHubClient,
-    storage: Storage,
+    repos: RepoStore,
     on_status: StatusCallback,
 ) -> ProcessResult:
     """Process a single GitHub repo URL end-to-end.
@@ -80,7 +80,7 @@ async def process_repo(
         return ProcessResult(owner=owner, repo=repo, outcome=None, error=msg)
 
     # Pre-fetch dedup check: skip README download when nothing has changed.
-    outcome = storage.diff(metadata_entry)
+    outcome = repos.diff(metadata_entry)
 
     if outcome == UpsertOutcome.UNCHANGED:
         on_status(f"{owner}/{repo}: already up to date", Severity.INFO)
@@ -103,7 +103,7 @@ async def process_repo(
         )
 
     # Atomic upsert. SQLite's WAL + single-writer replaces the old asyncio lock.
-    outcome = storage.upsert(metadata_entry, readme_content)
+    outcome = repos.upsert(metadata_entry, readme_content)
 
     if outcome == UpsertOutcome.NEW:
         on_status(f"{owner}/{repo}: captured successfully", Severity.SUCCESS)

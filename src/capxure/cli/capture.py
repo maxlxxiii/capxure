@@ -11,10 +11,10 @@ from capxure import (
     GitHubClient,
     ProcessResult,
     Severity,
-    Storage,
     parse_github_url,
     process_repo,
 )
+from capxure.db import Database
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -43,14 +43,14 @@ def command(args: argparse.Namespace) -> int:
         return 3
 
     db_path = _resolve_db_path(args.data_dir)
-    storage = Storage(db_path=db_path) if db_path is not None else Storage()
+    db = Database(db_path=db_path) if db_path is not None else Database()
 
     async def _run() -> ProcessResult:
         async with GitHubClient(token=token) as github:
             return await process_repo(
                 args.target,
                 github=github,
-                storage=storage,
+                repos=db.repos,
                 on_status=_print_status,
             )
 
@@ -79,7 +79,7 @@ def _resolve_token() -> str | None:
 
 
 def _resolve_db_path(data_dir_flag: str | None) -> Path | None:
-    """Map the --data-dir flag to a Storage db_path, or None to use the library default."""
+    """Map the --data-dir flag to a Database db_path, or None to use the library default."""
     if data_dir_flag is None:
         return None
     return (Path(data_dir_flag).expanduser().resolve()) / "capxure.db"

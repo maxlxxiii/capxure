@@ -5,14 +5,16 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from capxure.db import Database
+from capxure.git.store import UpsertOutcome
 from capxure.processor import ProcessResult, Severity, process_repo
-from capxure.storage import Storage, UpsertOutcome
 
 
 @pytest.mark.asyncio
 async def test_process_repo_new_then_unchanged(db_path, claude_mem_metadata):
     """First run captures; second run skips the README fetch via diff()."""
-    storage = Storage(db_path)
+    db = Database(db_path)
+    repos = db.repos
     try:
         github = MagicMock()
         github.fetch_metadata = AsyncMock(return_value=claude_mem_metadata)
@@ -27,19 +29,19 @@ async def test_process_repo_new_then_unchanged(db_path, claude_mem_metadata):
         url = f"https://github.com/{full_name}"
 
         # First call: NEW.
-        first = await process_repo(url, github=github, storage=storage, on_status=on_status)
+        first = await process_repo(url, github=github, repos=repos, on_status=on_status)
         assert isinstance(first, ProcessResult)
         assert first.outcome == UpsertOutcome.NEW
-        assert storage.count_repos() == 1
+        assert repos.count_repos() == 1
         assert github.fetch_metadata.await_count == 1
         assert github.fetch_readme.await_count == 1
 
         # Second call: UNCHANGED — diff() short-circuits, no fetch_readme call.
-        second = await process_repo(url, github=github, storage=storage, on_status=on_status)
+        second = await process_repo(url, github=github, repos=repos, on_status=on_status)
         assert second.outcome == UpsertOutcome.UNCHANGED
         assert github.fetch_metadata.await_count == 2
         assert github.fetch_readme.await_count == 1, (
             "fetch_readme must NOT be called when diff() returns UNCHANGED"
         )
     finally:
-        storage.close()
+        db.close()

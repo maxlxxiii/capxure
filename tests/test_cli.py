@@ -157,24 +157,24 @@ class _AsyncCM:
         return False
 
 
-def _patch_client_and_storage(monkeypatch):
-    """Replace GitHubClient (async CM) and Storage with test doubles. Returns (client, storage, process_repo_mock)."""
+def _patch_client_and_database(monkeypatch):
+    """Replace GitHubClient (async CM) and Database with test doubles. Returns (client, database, process_repo_mock)."""
     client_instance = MagicMock(name="GitHubClient.instance")
     client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
-    storage_instance = MagicMock(name="Storage.instance")
-    storage_cls = MagicMock(name="Storage", return_value=storage_instance)
+    database_instance = MagicMock(name="Database.instance")
+    database_cls = MagicMock(name="Database", return_value=database_instance)
     process_repo_mock = AsyncMock(name="process_repo")
 
     monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
-    monkeypatch.setattr("capxure.cli.capture.Storage", storage_cls)
+    monkeypatch.setattr("capxure.cli.capture.Database", database_cls)
     monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
-    return client_cls, storage_cls, process_repo_mock
+    return client_cls, database_cls, process_repo_mock
 
 
 class TestCommandHappyPath:
     def test_returns_zero_on_successful_capture(self, monkeypatch, args_ok):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="owner", repo="repo", outcome=UpsertOutcome.NEW
         )
@@ -184,7 +184,7 @@ class TestCommandHappyPath:
     def test_passes_token_to_github_client(self, monkeypatch, args_ok):
         monkeypatch.setenv("GITHUB_TOKEN", "secret123")
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        client_cls, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        client_cls, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
@@ -192,9 +192,9 @@ class TestCommandHappyPath:
         command(args_ok)
         client_cls.assert_called_once_with(token="secret123")
 
-    def test_passes_composed_db_path_to_storage(self, monkeypatch, args_ok, tmp_path):
+    def test_passes_composed_db_path_to_database(self, monkeypatch, args_ok, tmp_path):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, storage_cls, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, database_cls, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
@@ -203,32 +203,32 @@ class TestCommandHappyPath:
         # _resolve_db_path calls .expanduser().resolve() on the parent dir, so
         # compare against the same canonicalization to survive macOS's /private symlink.
         expected = tmp_path.expanduser().resolve() / "capxure.db"
-        storage_cls.assert_called_once_with(db_path=expected)
+        database_cls.assert_called_once_with(db_path=expected)
 
     def test_omits_db_path_when_no_data_dir_flag(self, monkeypatch, args_ok):
         args_ok.data_dir = None
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, storage_cls, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, database_cls, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
 
         command(args_ok)
-        storage_cls.assert_called_once_with()
+        database_cls.assert_called_once_with()
 
     def test_passes_keyword_args_to_process_repo(self, monkeypatch, args_ok):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
         # Rebuild patches locally so we can refer to the instance objects.
         client_instance = MagicMock(name="GitHubClient.instance")
         client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
-        storage_instance = MagicMock(name="Storage.instance")
-        storage_cls = MagicMock(name="Storage", return_value=storage_instance)
+        database_instance = MagicMock(name="Database.instance")
+        database_cls = MagicMock(name="Database", return_value=database_instance)
         process_repo_mock = AsyncMock(name="process_repo")
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
         monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
-        monkeypatch.setattr("capxure.cli.capture.Storage", storage_cls)
+        monkeypatch.setattr("capxure.cli.capture.Database", database_cls)
         monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
 
         command(args_ok)
@@ -238,14 +238,15 @@ class TestCommandHappyPath:
         assert call.args == ("owner/repo",)
         # Identity checks: verify the CLI passed the actual yielded / constructed objects.
         assert call.kwargs["github"] is client_instance
-        assert call.kwargs["storage"] is storage_instance
+        # CLI hands process_repo the RepoStore via db.repos.
+        assert call.kwargs["repos"] is database_instance.repos
         # on_status should be _print_status itself — not a wrapper, not a lambda.
         assert call.kwargs["on_status"] is _print_status
 
-    def test_integration_real_asyncio_and_storage(self, monkeypatch, args_ok, tmp_path):
-        """Real asyncio.run + real Storage + mocked network — catches integration seams."""
+    def test_integration_real_asyncio_and_database(self, monkeypatch, args_ok, tmp_path):
+        """Real asyncio.run + real Database + mocked network — catches integration seams."""
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        # Patch network only. Storage stays real and writes to tmp_path/capxure.db.
+        # Patch network only. Database stays real and writes to tmp_path/capxure.db.
         client_instance = MagicMock(name="GitHubClient.instance")
         client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
         process_repo_mock = AsyncMock(name="process_repo")
@@ -254,10 +255,10 @@ class TestCommandHappyPath:
         )
         monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
         monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
-        # Note: Storage is NOT patched — real SQLite DB created on tmp_path.
+        # Note: Database is NOT patched — real SQLite DB created on tmp_path.
 
         assert command(args_ok) == 0
-        # Confirm Storage actually built a DB file on disk.
+        # Confirm Database actually built a DB file on disk.
         assert (tmp_path / "capxure.db").exists()
 
 
@@ -266,7 +267,7 @@ class TestCommandErrorPaths:
         self, monkeypatch, args_ok, capsys
     ):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=None, error="rate limited"
         )
@@ -278,8 +279,8 @@ class TestCommandErrorPaths:
     ):
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
-        # GitHubClient/Storage should NOT be constructed.
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        # GitHubClient/Database should NOT be constructed.
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
 
         assert command(args_ok) == 1
         err = capsys.readouterr().err
@@ -289,7 +290,7 @@ class TestCommandErrorPaths:
     def test_returns_three_on_parse_error(self, monkeypatch, args_ok, capsys):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
         args_ok.target = "not-a-valid-url-at-all-no-slashes-here"
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
 
         assert command(args_ok) == 3
         process_repo_mock.assert_not_called()
@@ -297,7 +298,7 @@ class TestCommandErrorPaths:
 
     def test_returns_130_on_keyboard_interrupt(self, monkeypatch, args_ok, capsys):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         # Let the real asyncio.run execute; KeyboardInterrupt propagates out of
         # the awaited process_repo call, hitting the try/except in command().
         process_repo_mock.side_effect = KeyboardInterrupt
@@ -311,7 +312,7 @@ class TestMainDispatch:
 
     def test_slash_target_routes_to_capture(self, monkeypatch, tmp_path):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="owner", repo="repo", outcome=UpsertOutcome.NEW
         )
@@ -322,7 +323,7 @@ class TestMainDispatch:
 
     def test_url_target_routes_to_capture(self, monkeypatch):
         monkeypatch.setenv("GITHUB_TOKEN", "t0k3n")
-        _, _, process_repo_mock = _patch_client_and_storage(monkeypatch)
+        _, _, process_repo_mock = _patch_client_and_database(monkeypatch)
         process_repo_mock.return_value = ProcessResult(
             owner="owner", repo="repo", outcome=UpsertOutcome.NEW
         )

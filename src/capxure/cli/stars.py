@@ -10,9 +10,9 @@ from pathlib import Path
 from capxure import (
     GitHubClient,
     Severity,
-    Storage,
     process_repo,
 )
+from capxure.db import Database
 from capxure.github import (
     AuthenticationError,
     NotFoundError,
@@ -65,7 +65,7 @@ def command(args: argparse.Namespace) -> int:
         return 1
 
     db_path = _resolve_db_path(args.data_dir)
-    storage = Storage(db_path=db_path) if db_path is not None else Storage()
+    db = Database(db_path=db_path) if db_path is not None else Database()
 
     user_label = args.user if args.user else "the authenticated user"
 
@@ -87,7 +87,7 @@ def command(args: argparse.Namespace) -> int:
                 raise _ListPhaseAbort(1) from exc
 
             urls = [t[2] for t in starred]
-            already = storage.existing_urls(urls)
+            already = db.repos.existing_urls(urls)
             new_items = [t for t in starred if t[2] not in already]
 
             if not _confirm(
@@ -107,7 +107,7 @@ def command(args: argparse.Namespace) -> int:
                 result = await process_repo(
                     url,
                     github=github,
-                    storage=storage,
+                    repos=db.repos,
                     on_status=_silent_status,
                 )
                 if result.outcome is not None:
