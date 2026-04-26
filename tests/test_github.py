@@ -40,8 +40,6 @@ class TestParseGithubUrl:
             parse_github_url("https://gitlab.com/owner/repo")
 
 
-import json
-
 import httpx
 
 from capxure.github import (
