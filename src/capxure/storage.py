@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Literal, Sequence
 
 from platformdirs import user_data_dir
@@ -436,6 +437,22 @@ class Storage:
     def count_repos(self) -> int:
         cur = self._conn.execute("SELECT COUNT(*) FROM repos")
         return cur.fetchone()[0]
+
+    def existing_urls(self, urls: Iterable[str]) -> set[str]:
+        """Return the subset of input URLs that already exist in the repos table.
+
+        Single SELECT with a parameterized IN clause. Empty input is an early
+        return — never sends a malformed query to SQLite.
+        """
+        url_list = list(urls)
+        if not url_list:
+            return set()
+        placeholders = ",".join("?" * len(url_list))
+        cur = self._conn.execute(
+            f"SELECT url FROM repos WHERE url IN ({placeholders})",
+            url_list,
+        )
+        return {row[0] for row in cur}
 
     def list_topic_counts(
         self,

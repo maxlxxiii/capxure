@@ -552,3 +552,57 @@ def test_list_topic_counts_empty_db(db_path):
         assert storage.list_topic_counts() == []
     finally:
         storage.close()
+
+
+class TestExistingUrls:
+    def test_empty_input_returns_empty_set(self, db_path):
+        storage = Storage(db_path)
+        try:
+            assert storage.existing_urls([]) == set()
+        finally:
+            storage.close()
+
+    def test_no_matches_returns_empty_set(self, db_path):
+        storage = Storage(db_path)
+        try:
+            result = storage.existing_urls([
+                "https://github.com/owner1/repo1",
+                "https://github.com/owner2/repo2",
+            ])
+            assert result == set()
+        finally:
+            storage.close()
+
+    def test_partial_match(self, db_path, claude_mem_metadata):
+        storage = Storage(db_path)
+        try:
+            storage.upsert(claude_mem_metadata, readme_content="# hi")
+            stored_url = claude_mem_metadata["html_url"]
+            result = storage.existing_urls([
+                stored_url,
+                "https://github.com/nope/nope",
+            ])
+            assert result == {stored_url}
+        finally:
+            storage.close()
+
+    def test_full_match(self, db_path, claude_mem_metadata, awesome_nodejs_metadata):
+        storage = Storage(db_path)
+        try:
+            storage.upsert(claude_mem_metadata, readme_content=None)
+            storage.upsert(awesome_nodejs_metadata, readme_content=None)
+            urls = [claude_mem_metadata["html_url"], awesome_nodejs_metadata["html_url"]]
+            assert storage.existing_urls(urls) == set(urls)
+        finally:
+            storage.close()
+
+    def test_iterable_input_consumed_once(self, db_path, claude_mem_metadata):
+        """Pass a generator (single-use iterable) — must not break on internal re-iteration."""
+        storage = Storage(db_path)
+        try:
+            storage.upsert(claude_mem_metadata, readme_content=None)
+            stored_url = claude_mem_metadata["html_url"]
+            gen = (u for u in [stored_url, "https://github.com/nope/nope"])
+            assert storage.existing_urls(gen) == {stored_url}
+        finally:
+            storage.close()
