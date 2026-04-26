@@ -175,6 +175,9 @@ class TestCommandHappyPath:
         client_instance = MagicMock(name="GitHubClient.instance")
         client_cls = MagicMock(name="GitHubClient", return_value=_AsyncCM(client_instance))
         database_instance = MagicMock(name="Database.instance")
+        # Real Database.__enter__ returns self; mirror that so `with Database() as db: db.repos`
+        # hands back database_instance.repos rather than a fresh child mock.
+        database_instance.__enter__.return_value = database_instance
         database_cls = MagicMock(name="Database", return_value=database_instance)
         process_repo_mock = AsyncMock(name="process_repo")
         process_repo_mock.return_value = ProcessResult(

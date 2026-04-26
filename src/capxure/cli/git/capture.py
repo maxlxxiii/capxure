@@ -43,24 +43,23 @@ def command(args: argparse.Namespace) -> int:
         return 3
 
     db_path = _resolve_db_path(args.data_dir)
-    db = Database(db_path=db_path) if db_path is not None else Database()
+    with (Database(db_path=db_path) if db_path is not None else Database()) as db:
+        async def _run() -> ProcessResult:
+            async with GitHubClient(token=token) as github:
+                return await process_repo(
+                    args.target,
+                    github=github,
+                    repos=db.repos,
+                    on_status=_print_status,
+                )
 
-    async def _run() -> ProcessResult:
-        async with GitHubClient(token=token) as github:
-            return await process_repo(
-                args.target,
-                github=github,
-                repos=db.repos,
-                on_status=_print_status,
-            )
+        try:
+            result = asyncio.run(_run())
+        except KeyboardInterrupt:
+            print("interrupted", file=sys.stderr)
+            return 130
 
-    try:
-        result = asyncio.run(_run())
-    except KeyboardInterrupt:
-        print("interrupted", file=sys.stderr)
-        return 130
-
-    return _exit_code_for(result)
+        return _exit_code_for(result)
 
 
 # --- helpers ---

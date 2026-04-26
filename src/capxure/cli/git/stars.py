@@ -65,82 +65,81 @@ def command(args: argparse.Namespace) -> int:
         return 1
 
     db_path = _resolve_db_path(args.data_dir)
-    db = Database(db_path=db_path) if db_path is not None else Database()
+    with (Database(db_path=db_path) if db_path is not None else Database()) as db:
+        user_label = args.user if args.user else "the authenticated user"
 
-    user_label = args.user if args.user else "the authenticated user"
+        async def _run() -> tuple[int, int, int]:
+            async with GitHubClient(token=token) as github:
+                try:
+                    starred = await github.list_starred(user=args.user, limit=args.limit)
+                except AuthenticationError as exc:
+                    print(f"error: {exc}", file=sys.stderr)
+                    raise _ListPhaseAbort(1) from exc
+                except NotFoundError as exc:
+                    print(f"error: {exc}", file=sys.stderr)
+                    raise _ListPhaseAbort(1) from exc
+                except RateLimitExceededError as exc:
+                    print(
+                        f"error: GitHub rate limit exceeded; resets at {exc.reset_timestamp}",
+                        file=sys.stderr,
+                    )
+                    raise _ListPhaseAbort(1) from exc
 
-    async def _run() -> tuple[int, int, int]:
-        async with GitHubClient(token=token) as github:
-            try:
-                starred = await github.list_starred(user=args.user, limit=args.limit)
-            except AuthenticationError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                raise _ListPhaseAbort(1) from exc
-            except NotFoundError as exc:
-                print(f"error: {exc}", file=sys.stderr)
-                raise _ListPhaseAbort(1) from exc
-            except RateLimitExceededError as exc:
-                print(
-                    f"error: GitHub rate limit exceeded; resets at {exc.reset_timestamp}",
-                    file=sys.stderr,
-                )
-                raise _ListPhaseAbort(1) from exc
+                urls = [t[2] for t in starred]
+                already = db.repos.existing_urls(urls)
+                new_items = [t for t in starred if t[2] not in already]
 
-            urls = [t[2] for t in starred]
-            already = db.repos.existing_urls(urls)
-            new_items = [t for t in starred if t[2] not in already]
+                if not _confirm(
+                    total=len(starred),
+                    already=len(already),
+                    new=len(new_items),
+                    yes=args.yes,
+                    quiet=args.quiet,
+                    user_label=user_label,
+                    limit=args.limit,
+                ):
+                    return (0, len(already), 0)
 
-            if not _confirm(
-                total=len(starred),
-                already=len(already),
-                new=len(new_items),
-                yes=args.yes,
-                quiet=args.quiet,
-                user_label=user_label,
-                limit=args.limit,
-            ):
-                return (0, len(already), 0)
+                captured = 0
+                failed = 0
+                for owner, name, url in new_items:
+                    result = await process_repo(
+                        url,
+                        github=github,
+                        repos=db.repos,
+                        on_status=_silent_status,
+                    )
+                    if result.outcome is not None:
+                        captured += 1
+                        if not args.quiet:
+                            print(f"✓ {owner}/{name}", file=sys.stderr, flush=True)
+                    else:
+                        failed += 1
+                        tag = _short_tag(result.error)
+                        if not args.quiet:
+                            print(f"✗ {owner}/{name} ({tag})", file=sys.stderr, flush=True)
+                        if _is_fatal_loop_error(result.error):
+                            print(
+                                f"error: aborting — {tag} affects every remaining repo",
+                                file=sys.stderr,
+                            )
+                            break
 
-            captured = 0
-            failed = 0
-            for owner, name, url in new_items:
-                result = await process_repo(
-                    url,
-                    github=github,
-                    repos=db.repos,
-                    on_status=_silent_status,
-                )
-                if result.outcome is not None:
-                    captured += 1
-                    if not args.quiet:
-                        print(f"✓ {owner}/{name}", file=sys.stderr, flush=True)
-                else:
-                    failed += 1
-                    tag = _short_tag(result.error)
-                    if not args.quiet:
-                        print(f"✗ {owner}/{name} ({tag})", file=sys.stderr, flush=True)
-                    if _is_fatal_loop_error(result.error):
-                        print(
-                            f"error: aborting — {tag} affects every remaining repo",
-                            file=sys.stderr,
-                        )
-                        break
+                return (captured, len(already), failed)
 
-            return (captured, len(already), failed)
+        try:
+            captured, already_count, failed = asyncio.run(_run())
+        except _ListPhaseAbort as abort:
+            return abort.exit_code
+        except KeyboardInterrupt:
+            print("interrupted", file=sys.stderr)
+            return 130
 
-    try:
-        captured, already_count, failed = asyncio.run(_run())
-    except _ListPhaseAbort as abort:
-        return abort.exit_code
-    except KeyboardInterrupt:
-        print("interrupted", file=sys.stderr)
-        return 130
-
-    print(
-        f"captured: {captured}, already had: {already_count}, failed: {failed}",
-        file=sys.stderr,
-    )
-    return 0 if failed == 0 else 1
+        print(
+            f"captured: {captured}, already had: {already_count}, failed: {failed}",
+            file=sys.stderr,
+        )
+        return 0 if failed == 0 else 1
 
 
 # --- helpers ---

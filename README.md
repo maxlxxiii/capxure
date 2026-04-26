@@ -19,27 +19,29 @@ pytest
 
 ## CLI
 
-Installing capxure adds a `cap` console script for ad-hoc captures:
+Installing capxure adds a `cap` console script. GitHub commands live under `cap git`:
 
 ```
-export GITHUB_TOKEN=ghp_...        # or GH_TOKEN
-cap owner/repo                     # capture by shorthand
-cap https://github.com/owner/repo  # or by full URL
-cap owner/repo --data-dir ~/caps   # override storage location
+export GITHUB_TOKEN=ghp_...                 # or GH_TOKEN
+cap git owner/repo                          # capture by shorthand
+cap git https://github.com/owner/repo       # or by full URL
+cap git capture owner/repo                  # explicit form (alias of the above)
+cap git owner/repo --data-dir ~/caps        # override storage location
+cap git stars                               # bulk-capture your starred repos
 ```
 
-Progress events print to stderr (`info: Fetching metadata…`, `success: owner/repo: captured successfully`). stdout is reserved for future subcommands (`list`, `show`) that will produce structured output.
+Progress events print to stderr (`info: Fetching metadata…`, `success: owner/repo: captured successfully`). stdout is reserved for read commands (`ls`) that produce structured output.
 
 Exit codes: `0` success (including dedup-skip), `1` library-reported failure or missing token, `2` usage error, `3` malformed target, `130` Ctrl-C.
 
 ### Listing captured repos
 
 ```
-cap ls                             # pretty table on a TTY, TSV when piped
-cap ls -s stars -r                 # least-starred first
-cap ls -t ml -t nlp -l 25          # repos tagged ml OR nlp, top 25
-cap ls topics                      # topic counts, descending
-cap ls --format plain              # force TSV (9 fields per repo)
+cap git ls                         # pretty table on a TTY, TSV when piped
+cap git ls -s stars -r             # least-starred first
+cap git ls -t ml -t nlp -l 25      # repos tagged ml OR nlp, top 25
+cap git ls topics                  # topic counts, descending
+cap git ls --format plain          # force TSV (9 fields per repo)
 ```
 
 Plain output is tab-separated and intended for scripts; the description field has tabs/newlines collapsed to spaces so downstream `awk` / `cut` / `fzf` parse cleanly. Use `CAPXURE_DATA_DIR` to target a non-default db.
@@ -54,19 +56,19 @@ For programmatic use, import directly. Your consumer code is responsible for obt
 import asyncio
 import os
 
-from capxure import GitHubClient, Storage, process_repo, Severity
+from capxure import Database, GitHubClient, process_repo, Severity
 
 
 async def main() -> None:
     def log(message: str, severity: Severity) -> None:
         print(f"[{severity}] {message}")
 
-    with Storage() as storage:
+    with Database() as db:
         async with GitHubClient(os.environ["GITHUB_TOKEN"]) as gh:
             await process_repo(
                 "https://github.com/owner/repo",
                 github=gh,
-                storage=storage,
+                repos=db.repos,
                 on_status=log,
             )
 
@@ -74,49 +76,51 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-## Storage
+## Database
 
 Capxure persists captured repos to a single SQLite database. The default location resolves in this order:
 
 1. `$CAPXURE_DATA_DIR` environment variable (if set and non-empty)
 2. `platformdirs.user_data_dir("capxure")` — e.g. `~/.local/share/capxure/` on Linux, `~/Library/Application Support/capxure/` on macOS
 
-The database file inside that directory is `capxure.db`. Override the full path with `Storage(db_path=Path(...))`.
+The database file inside that directory is `capxure.db`. Override the full path with `Database(db_path=Path(...))`.
 
 WAL mode is enabled, so while a connection is open you'll see `capxure.db-wal` and `capxure.db-shm` sidecar files next to the database. These are cleaned up on a normal close and do not need to be backed up separately.
 
 ### Schema (public contract)
 
-The schema is a documented public contract — you may run arbitrary SQL against it via the `storage.connection` escape hatch.
+The schema is a documented public contract — you may run arbitrary SQL against it via the `db.connection` escape hatch.
 
 - Table `repos` — one row per captured GitHub repo. Includes denormalized columns for common query hotspots (`language`, `stars`, `forks`, `pushed_at`, `is_fork`, `is_archived`), an inline `readme_content` column (nullable; `NULL` means "no README"), and the full GitHub API response preserved as JSON in `metadata`.
 - Table `repo_topics` — junction table for many-to-many topics. Composite primary key `(repo_id, topic)` provides insert-dedup; a secondary index on `topic` supports `WHERE topic = ?` filtering.
 
-The full DDL lives in `src/capxure/storage.py` under `_SCHEMA_SQL`.
+The full DDL lives in `src/capxure/db.py` under `_SCHEMA_SQL`.
 
 ### Python API
 
-```python
-from capxure import Storage, UpsertOutcome
+`Database` owns the connection and schema; `RepoStore` (accessed via `db.repos`) owns repo queries. This split keeps each unit small and lets future capture domains (e.g. notes) drop in alongside without touching repo code.
 
-with Storage() as storage:
-    outcome = storage.upsert(github_metadata_dict, readme_content)
+```python
+from capxure import Database, UpsertOutcome
+
+with Database() as db:
+    outcome = db.repos.upsert(github_metadata_dict, readme_content)
     # outcome is one of: NEW, UPDATED, RENAMED, UNCHANGED, LOCAL_IS_NEWER
 
-    repo = storage.get_repo("sindresorhus", "awesome-nodejs")
+    repo = db.repos.get_repo("sindresorhus", "awesome-nodejs")
     if repo is not None:
         print(repo.stars, repo.topics)
 
     # Default order is last_synced_at DESC; pass sort=/reverse=/topics=/limit=
     # to customize. Zero-arg call still returns every row.
-    all_repos = storage.list_repos()
+    all_repos = db.repos.list_repos()
 ```
 
-The `storage.connection` property exposes the underlying `sqlite3.Connection` as an escape hatch for ad-hoc SQL:
+The `db.connection` property exposes the underlying `sqlite3.Connection` as an escape hatch for ad-hoc SQL:
 
 ```python
-with Storage() as storage:
-    for row in storage.connection.execute(
+with Database() as db:
+    for row in db.connection.execute(
         "SELECT full_name, stars FROM repos WHERE language = ? ORDER BY stars DESC",
         ("Python",),
     ):
@@ -124,6 +128,15 @@ with Storage() as storage:
 ```
 
 ## Changelog
+
+### 0.4.0
+
+**Breaking:** CLI and Python API both reorganized around per-domain subpackages to make room for additional capture surfaces.
+
+- CLI: GitHub commands move under `cap git`. `cap owner/repo`, `cap ls`, `cap stars`, and `cap capture` no longer work — use `cap git owner/repo`, `cap git ls`, `cap git stars`, `cap git capture` instead. `cap` with no arguments prints usage and exits 2.
+- Python API: `Storage` is removed. Use `Database` (connection + schema lifecycle) plus `db.repos` (a `RepoStore` instance for repo queries). `process_repo` now takes `repos: RepoStore` instead of `storage: Storage`.
+- Module reorganization: `capxure.github` → `capxure.git.client`; `capxure.processor` → `capxure.git.processor`. The top-level `capxure` package re-exports everything previously available there (minus `Storage`), so `from capxure import GitHubClient` etc. keeps working.
+- Schema is unchanged. Existing databases on disk continue to work without migration.
 
 ### 0.3.0
 
