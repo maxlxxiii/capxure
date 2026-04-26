@@ -175,3 +175,178 @@ class TestConfirm:
             )
         err = capsys.readouterr().err
         assert "limited to 20" in err
+
+
+import argparse
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+from capxure import ProcessResult, UpsertOutcome
+
+
+def _make_args(
+    *,
+    user: str | None = None,
+    limit: int | None = None,
+    quiet: bool = False,
+    yes: bool = True,
+    data_dir: Any = None,
+) -> argparse.Namespace:
+    return argparse.Namespace(
+        subcommand="stars",
+        user=user,
+        limit=limit,
+        quiet=quiet,
+        yes=yes,
+        data_dir=data_dir,
+        handler=None,
+    )
+
+
+class TestCommandHappyPath:
+    def test_missing_token_returns_1_with_error(self, monkeypatch, capsys):
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+
+        from capxure.cli.stars import command
+
+        rc = command(_make_args())
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "GITHUB_TOKEN" in err
+
+    def test_full_flow_yes_with_two_new_one_dupe_all_succeed(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [
+            ("alice", "repo1", "https://github.com/alice/repo1"),
+            ("bob", "repo2", "https://github.com/bob/repo2"),
+            ("carol", "repo3", "https://github.com/carol/repo3"),
+        ]
+        # repo2 is already in the DB
+        existing = {"https://github.com/bob/repo2"}
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            owner, repo = url.removeprefix("https://github.com/").split("/")
+            return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=existing):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 0
+        out = capsys.readouterr()
+        # Per-repo lines on stderr
+        assert "alice/repo1" in out.err
+        assert "carol/repo3" in out.err
+        # bob/repo2 is a dupe — must NOT be passed to process_repo (no per-repo line)
+        assert "bob/repo2" not in out.err
+        # Summary line
+        assert "captured: 2" in out.err
+        assert "already had: 1" in out.err
+        assert "failed: 0" in out.err
+
+    def test_quiet_suppresses_per_repo_lines_but_keeps_summary(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [("alice", "repo1", "https://github.com/alice/repo1")]
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, quiet=True, data_dir=str(tmp_path)))
+
+        assert rc == 0
+        err = capsys.readouterr().err
+        # No per-repo log line under --quiet
+        assert "✓ alice/repo1" not in err
+        # Summary still prints
+        assert "captured: 1" in err
+
+    def test_per_repo_failure_continues_loop_and_increments_failed(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [
+            ("alice", "repo1", "https://github.com/alice/repo1"),
+            ("bob", "repo2", "https://github.com/bob/repo2"),
+            ("carol", "repo3", "https://github.com/carol/repo3"),
+        ]
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            owner, repo = url.removeprefix("https://github.com/").split("/")
+            if repo == "repo2":
+                # process_repo signals failure via outcome=None, error="..."
+                return ProcessResult(owner=owner, repo=repo, outcome=None, error="404")
+            return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        # failed > 0 → exit 1
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "✓ alice/repo1" in err
+        assert "✗ bob/repo2" in err
+        assert "✓ carol/repo3" in err
+        assert "captured: 2" in err
+        assert "failed: 1" in err
+
+    def test_no_new_repos_skips_loop_with_zero_summary(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [("alice", "repo1", "https://github.com/alice/repo1")]
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        process_repo_called = False
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            nonlocal process_repo_called
+            process_repo_called = True
+            return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch(
+                 "capxure.cli.stars.Storage.existing_urls",
+                 return_value={"https://github.com/alice/repo1"},
+             ):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 0
+        assert process_repo_called is False
+        err = capsys.readouterr().err
+        assert "captured: 0" in err
+        assert "already had: 1" in err
