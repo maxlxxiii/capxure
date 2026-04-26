@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
+from capxure import ProcessResult, UpsertOutcome
 from capxure.cli import build_parser
 from capxure.cli.stars import _confirm
 
@@ -175,13 +177,6 @@ class TestConfirm:
             )
         err = capsys.readouterr().err
         assert "limited to 20" in err
-
-
-import argparse
-from typing import Any
-from unittest.mock import AsyncMock, patch
-
-from capxure import ProcessResult, UpsertOutcome
 
 
 def _make_args(

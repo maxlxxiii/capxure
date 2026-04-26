@@ -9,7 +9,6 @@ from pathlib import Path
 
 from capxure import (
     GitHubClient,
-    ProcessResult,
     Severity,
     Storage,
     process_repo,
