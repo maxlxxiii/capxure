@@ -9,7 +9,7 @@ import pytest
 
 from capxure import ProcessResult, UpsertOutcome
 from capxure.cli import build_parser
-from capxure.cli.stars import _confirm
+from capxure.cli.git.stars import _confirm
 from capxure.git.client import (
     AuthenticationError,
     NotFoundError,
@@ -208,7 +208,7 @@ class TestCommandHappyPath:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
 
-        from capxure.cli.stars import command
+        from capxure.cli.git.stars import command
 
         rc = command(_make_args())
         assert rc == 1
@@ -235,10 +235,10 @@ class TestCommandHappyPath:
             owner, repo = url.removeprefix("https://github.com/").split("/")
             return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=existing):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -267,10 +267,10 @@ class TestCommandHappyPath:
         async def fake_process_repo(url, *, github, repos, on_status):
             return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, quiet=True, data_dir=str(tmp_path)))
 
@@ -302,10 +302,10 @@ class TestCommandHappyPath:
                 return ProcessResult(owner=owner, repo=repo, outcome=None, error="404")
             return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -335,13 +335,13 @@ class TestCommandHappyPath:
             process_repo_called = True
             return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch(
                  "capxure.git.store.RepoStore.existing_urls",
                  return_value={"https://github.com/alice/repo1"},
              ):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -361,8 +361,8 @@ class TestCommandErrorHandling:
         async def fake_list_starred(self, user, limit=None):
             raise AuthenticationError("Invalid or expired GITHUB_TOKEN")
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
-            from capxure.cli.stars import command
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -380,8 +380,8 @@ class TestCommandErrorHandling:
         async def fake_list_starred(self, user, limit=None):
             raise NotFoundError(f"User 'ghost' not found")
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
-            from capxure.cli.stars import command
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(user="ghost", yes=True, data_dir=str(tmp_path)))
 
@@ -399,8 +399,8 @@ class TestCommandErrorHandling:
         async def fake_list_starred(self, user, limit=None):
             raise RateLimitExceededError("rate limit", reset_timestamp=1700000000)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
-            from capxure.cli.stars import command
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -429,12 +429,12 @@ class TestCommandErrorHandling:
             return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
 
         # No --yes, but stdin is a TTY and user rejects with empty input.
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()), \
              patch("sys.stdin.isatty", return_value=True), \
              patch("builtins.input", return_value=""):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=False, data_dir=str(tmp_path)))
 
@@ -455,10 +455,10 @@ class TestCommandErrorHandling:
         async def fake_list_starred(self, user, limit=None):
             return starred
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()), \
              patch("sys.stdin.isatty", return_value=False):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=False, data_dir=str(tmp_path)))
 
@@ -500,10 +500,10 @@ class TestCommandErrorHandling:
             # Loop should abort before reaching repo3
             return ProcessResult(owner=owner, repo=repo, outcome=UpsertOutcome.NEW)
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -539,10 +539,10 @@ class TestCommandErrorHandling:
                 error="GitHub API rate limit exceeded — wait and retry",
             )
 
-        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
-             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+        with patch("capxure.cli.git.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.git.stars.process_repo", new=fake_process_repo), \
              patch("capxure.git.store.RepoStore.existing_urls", return_value=set()):
-            from capxure.cli.stars import command
+            from capxure.cli.git.stars import command
 
             rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
 
@@ -554,7 +554,7 @@ class TestCommandErrorHandling:
         assert "failed: 1" in err
 
 
-from capxure.cli.stars import _short_tag
+from capxure.cli.git.stars import _short_tag
 
 
 class TestShortTag:

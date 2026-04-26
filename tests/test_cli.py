@@ -55,7 +55,7 @@ def test_main_help_flag_exits_zero(capsys):
 from pathlib import Path
 
 from capxure import ProcessResult, Severity, UpsertOutcome
-from capxure.cli.capture import (
+from capxure.cli.git.capture import (
     _exit_code_for,
     _print_status,
     _resolve_db_path,
@@ -133,7 +133,7 @@ class TestExitCodeFor:
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
-from capxure.cli.capture import command
+from capxure.cli.git.capture import command
 
 
 @pytest.fixture
@@ -165,9 +165,9 @@ def _patch_client_and_database(monkeypatch):
     database_cls = MagicMock(name="Database", return_value=database_instance)
     process_repo_mock = AsyncMock(name="process_repo")
 
-    monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
-    monkeypatch.setattr("capxure.cli.capture.Database", database_cls)
-    monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
+    monkeypatch.setattr("capxure.cli.git.capture.GitHubClient", client_cls)
+    monkeypatch.setattr("capxure.cli.git.capture.Database", database_cls)
+    monkeypatch.setattr("capxure.cli.git.capture.process_repo", process_repo_mock)
     return client_cls, database_cls, process_repo_mock
 
 
@@ -227,9 +227,9 @@ class TestCommandHappyPath:
         process_repo_mock.return_value = ProcessResult(
             owner="o", repo="r", outcome=UpsertOutcome.NEW
         )
-        monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
-        monkeypatch.setattr("capxure.cli.capture.Database", database_cls)
-        monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
+        monkeypatch.setattr("capxure.cli.git.capture.GitHubClient", client_cls)
+        monkeypatch.setattr("capxure.cli.git.capture.Database", database_cls)
+        monkeypatch.setattr("capxure.cli.git.capture.process_repo", process_repo_mock)
 
         command(args_ok)
 
@@ -253,8 +253,8 @@ class TestCommandHappyPath:
         process_repo_mock.return_value = ProcessResult(
             owner="owner", repo="repo", outcome=UpsertOutcome.NEW
         )
-        monkeypatch.setattr("capxure.cli.capture.GitHubClient", client_cls)
-        monkeypatch.setattr("capxure.cli.capture.process_repo", process_repo_mock)
+        monkeypatch.setattr("capxure.cli.git.capture.GitHubClient", client_cls)
+        monkeypatch.setattr("capxure.cli.git.capture.process_repo", process_repo_mock)
         # Note: Database is NOT patched — real SQLite DB created on tmp_path.
 
         assert command(args_ok) == 0

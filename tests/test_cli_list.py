@@ -131,7 +131,7 @@ def test_main_ls_limit_negative_returns_2(capsys):
 
 # --- Pretty renderer tests --------------------------------------------------
 
-from capxure.cli.list_ import (
+from capxure.cli.git.ls import (
     _clip_description,
     _format_pretty_repos,
     _format_pretty_topics,
@@ -307,7 +307,7 @@ def test_resolve_format_auto_picks_plain_for_pipe():
 
 # --- Plain renderer tests ---------------------------------------------------
 
-from capxure.cli.list_ import (
+from capxure.cli.git.ls import (
     _format_plain_repos,
     _format_plain_topics,
     _scrub_description,
