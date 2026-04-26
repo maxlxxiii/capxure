@@ -369,6 +369,8 @@ class TestCommandErrorHandling:
         assert rc == 1
         err = capsys.readouterr().err
         assert "GITHUB_TOKEN" in err or "authentication" in err.lower()
+        # List-phase abort must not print the summary line.
+        assert "captured:" not in err
 
     def test_list_phase_not_found_for_named_user(
         self, monkeypatch, tmp_path, capsys
@@ -387,6 +389,7 @@ class TestCommandErrorHandling:
         err = capsys.readouterr().err
         assert "ghost" in err
         assert "not found" in err
+        assert "captured:" not in err
 
     def test_list_phase_rate_limit_aborts_with_reset_message(
         self, monkeypatch, tmp_path, capsys
@@ -406,6 +409,7 @@ class TestCommandErrorHandling:
         assert "rate limit" in err.lower()
         # Reset timestamp surfaced (in some readable form)
         assert "1700000000" in err or "reset" in err.lower()
+        assert "captured:" not in err
 
     def test_user_rejects_prompt_runs_no_captures_returns_zero(
         self, monkeypatch, tmp_path, capsys
