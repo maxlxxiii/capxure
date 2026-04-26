@@ -138,7 +138,7 @@ from capxure.cli.list_ import (
     _resolve_format,
     _truncate,
 )
-from capxure.storage import Repo
+from capxure.git.store import Repo
 
 
 def _mk_repo(

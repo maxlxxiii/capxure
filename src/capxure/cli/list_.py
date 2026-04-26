@@ -8,7 +8,8 @@ import sys
 import textwrap
 from typing import IO, Literal
 
-from capxure.storage import Repo, Storage
+from capxure.db import Database
+from capxure.git.store import Repo
 
 
 Format = Literal["pretty", "plain"]
@@ -77,9 +78,9 @@ def command(args: argparse.Namespace) -> int:
     limit = args.limit if args.limit is not None else 10
 
     try:
-        with Storage() as storage:
+        with Database() as db:
             if args.subject == "topics":
-                topic_rows = storage.list_topic_counts(
+                topic_rows = db.repos.list_topic_counts(
                     reverse=args.reverse,
                     limit=limit,
                 )
@@ -89,7 +90,7 @@ def command(args: argparse.Namespace) -> int:
                 else:
                     _format_plain_topics(topic_rows)
             else:
-                repos = storage.list_repos(
+                repos = db.repos.list_repos(
                     sort=args.sort if args.sort is not None else "synced",
                     reverse=args.reverse,
                     topics=args.topics or None,
