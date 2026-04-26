@@ -4,8 +4,12 @@ from __future__ import annotations
 import os
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from platformdirs import user_data_dir
+
+if TYPE_CHECKING:
+    from capxure.git.store import RepoStore
 
 __all__ = ["Database", "UnsupportedSchemaError"]
 
@@ -94,10 +98,19 @@ class Database:
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._ensure_schema()
+        self._repos: "RepoStore | None" = None
 
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @property
+    def repos(self) -> "RepoStore":
+        """Lazy accessor — constructs a RepoStore over self.connection on first use."""
+        if self._repos is None:
+            from capxure.git.store import RepoStore
+            self._repos = RepoStore(self._conn)
+        return self._repos
 
     def close(self) -> None:
         self._conn.close()

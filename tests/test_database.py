@@ -54,3 +54,18 @@ def test_close_is_idempotent(db_path):
     db = Database(db_path)
     db.close()
     db.close()  # Must not raise.
+
+
+def test_repos_accessor_returns_repostore(db_path):
+    """db.repos returns a RepoStore over db.connection."""
+    from capxure.git.store import RepoStore
+    with Database(db_path) as db:
+        store = db.repos
+        assert isinstance(store, RepoStore)
+        assert store.connection is db.connection
+
+
+def test_repos_accessor_is_stable(db_path):
+    """Repeated access returns the same RepoStore instance (cached)."""
+    with Database(db_path) as db:
+        assert db.repos is db.repos
