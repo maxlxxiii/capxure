@@ -1,6 +1,6 @@
 """capxure - Capture GitHub repos locally."""
 
-from capxure.github import (
+from capxure.git.client import (
     AuthenticationError,
     GitHubClient,
     GitHubError,

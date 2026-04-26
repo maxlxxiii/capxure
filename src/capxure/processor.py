@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from capxure.github import (
+from capxure.git.client import (
     AuthenticationError,
     GitHubClient,
     NotFoundError,

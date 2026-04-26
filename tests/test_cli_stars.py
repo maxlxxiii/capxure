@@ -10,7 +10,7 @@ import pytest
 from capxure import ProcessResult, UpsertOutcome
 from capxure.cli import build_parser
 from capxure.cli.stars import _confirm
-from capxure.github import (
+from capxure.git.client import (
     AuthenticationError,
     NotFoundError,
     RateLimitExceededError,

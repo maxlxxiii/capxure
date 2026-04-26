@@ -13,7 +13,7 @@ from capxure import (
     process_repo,
 )
 from capxure.db import Database
-from capxure.github import (
+from capxure.git.client import (
     AuthenticationError,
     NotFoundError,
     RateLimitExceededError,

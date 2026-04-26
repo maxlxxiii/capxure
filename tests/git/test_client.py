@@ -1,9 +1,9 @@
-"""Tests for capxure.github URL parsing."""
+"""Tests for capxure.git.client URL parsing."""
 from __future__ import annotations
 
 import pytest
 
-from capxure.github import parse_github_url
+from capxure.git.client import parse_github_url
 
 
 class TestParseGithubUrl:
@@ -42,7 +42,7 @@ class TestParseGithubUrl:
 
 import httpx
 
-from capxure.github import (
+from capxure.git.client import (
     AuthenticationError,
     GitHubClient,
     NotFoundError,
