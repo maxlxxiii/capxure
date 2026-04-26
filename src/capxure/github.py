@@ -70,6 +70,21 @@ def parse_github_url(url: str) -> tuple[str, str]:
     return m.group(1), m.group(2)
 
 
+def _next_link(link_header: str | None) -> str | None:
+    """Parse an HTTP Link header and return the URL with rel="next", or None.
+
+    Handles the format: `<url1>; rel="next", <url2>; rel="last"`.
+    """
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        section = part.strip()
+        if 'rel="next"' in section:
+            url_part = section.split(";", 1)[0].strip()
+            return url_part.lstrip("<").rstrip(">")
+    return None
+
+
 # ── Client ────────────────────────────────────────────────────
 
 
@@ -142,6 +157,39 @@ class GitHubClient:
             raise NotFoundError(f"README not found for {owner}/{repo}")
         resp.raise_for_status()
         return resp.text
+
+    async def list_starred(
+        self,
+        user: str | None,
+        limit: int | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """List a user's starred repos.
+
+        Returns a list of (owner, name, html_url) tuples in GitHub's default order
+        (most-recently-starred first). user=None hits /user/starred (the auth'd user);
+        otherwise hits /users/{user}/starred.
+
+        `limit` caps the number of items returned and stops pagination early.
+        """
+        path = "/user/starred" if user is None else f"/users/{user}/starred"
+        url: str | None = f"{self.BASE_API}{path}?per_page=100"
+        out: list[tuple[str, str, str]] = []
+        while url is not None:
+            resp = await self.client.get(url)
+            self._check_auth(resp)
+            self._check_rate_limit(resp)
+            if resp.status_code == 404:
+                raise NotFoundError(f"User {user!r} not found")
+            resp.raise_for_status()
+            for item in resp.json():
+                owner = item["owner"]["login"]
+                name = item["name"]
+                html_url = item["html_url"]
+                out.append((owner, name, html_url))
+                if limit is not None and len(out) >= limit:
+                    return out
+            url = _next_link(resp.headers.get("Link"))
+        return out
 
     def _check_auth(self, resp: httpx.Response) -> None:
         if resp.status_code == 401:
