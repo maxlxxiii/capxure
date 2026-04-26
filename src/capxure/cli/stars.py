@@ -13,6 +13,11 @@ from capxure import (
     Storage,
     process_repo,
 )
+from capxure.github import (
+    AuthenticationError,
+    NotFoundError,
+    RateLimitExceededError,
+)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -66,7 +71,20 @@ def command(args: argparse.Namespace) -> int:
 
     async def _run() -> tuple[int, int, int]:
         async with GitHubClient(token=token) as github:
-            starred = await github.list_starred(user=args.user, limit=args.limit)
+            try:
+                starred = await github.list_starred(user=args.user, limit=args.limit)
+            except AuthenticationError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                raise _ListPhaseAbort(1) from exc
+            except NotFoundError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                raise _ListPhaseAbort(1) from exc
+            except RateLimitExceededError as exc:
+                print(
+                    f"error: GitHub rate limit exceeded; resets at {exc.reset_timestamp}",
+                    file=sys.stderr,
+                )
+                raise _ListPhaseAbort(1) from exc
 
             urls = [t[2] for t in starred]
             already = storage.existing_urls(urls)
@@ -106,6 +124,8 @@ def command(args: argparse.Namespace) -> int:
 
     try:
         captured, already_count, failed = asyncio.run(_run())
+    except _ListPhaseAbort as abort:
+        return abort.exit_code
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
@@ -141,6 +161,14 @@ def _silent_status(message: str, severity: Severity) -> None:
     """StatusCallback that drops everything — per-repo log lines come from this handler,
     not from process_repo's internal status events."""
     return None
+
+
+class _ListPhaseAbort(Exception):
+    """Internal sentinel: list-phase failed; carry an exit code out of asyncio.run()."""
+
+    def __init__(self, exit_code: int) -> None:
+        super().__init__()
+        self.exit_code = exit_code
 
 
 def _confirm(

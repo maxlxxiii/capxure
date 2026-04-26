@@ -10,6 +10,11 @@ import pytest
 from capxure import ProcessResult, UpsertOutcome
 from capxure.cli import build_parser
 from capxure.cli.stars import _confirm
+from capxure.github import (
+    AuthenticationError,
+    NotFoundError,
+    RateLimitExceededError,
+)
 
 
 class TestStarsParser:
@@ -345,3 +350,116 @@ class TestCommandHappyPath:
         err = capsys.readouterr().err
         assert "captured: 0" in err
         assert "already had: 1" in err
+
+
+class TestCommandErrorHandling:
+    def test_list_phase_authentication_error_aborts(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        async def fake_list_starred(self, user, limit=None):
+            raise AuthenticationError("Invalid or expired GITHUB_TOKEN")
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "GITHUB_TOKEN" in err or "authentication" in err.lower()
+
+    def test_list_phase_not_found_for_named_user(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        async def fake_list_starred(self, user, limit=None):
+            raise NotFoundError(f"User 'ghost' not found")
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(user="ghost", yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "ghost" in err
+        assert "not found" in err
+
+    def test_list_phase_rate_limit_aborts_with_reset_message(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        async def fake_list_starred(self, user, limit=None):
+            raise RateLimitExceededError("rate limit", reset_timestamp=1700000000)
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=True, data_dir=str(tmp_path)))
+
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "rate limit" in err.lower()
+        # Reset timestamp surfaced (in some readable form)
+        assert "1700000000" in err or "reset" in err.lower()
+
+    def test_user_rejects_prompt_runs_no_captures_returns_zero(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [("alice", "repo1", "https://github.com/alice/repo1")]
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        process_repo_called = False
+
+        async def fake_process_repo(url, *, github, storage, on_status):
+            nonlocal process_repo_called
+            process_repo_called = True
+            return ProcessResult(owner="alice", repo="repo1", outcome=UpsertOutcome.NEW)
+
+        # No --yes, but stdin is a TTY and user rejects with empty input.
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.process_repo", new=fake_process_repo), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()), \
+             patch("sys.stdin.isatty", return_value=True), \
+             patch("builtins.input", return_value=""):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=False, data_dir=str(tmp_path)))
+
+        assert rc == 0
+        assert process_repo_called is False
+        err = capsys.readouterr().err
+        assert "captured: 0" in err
+
+    def test_non_tty_without_yes_aborts_before_listing(
+        self, monkeypatch, tmp_path, capsys
+    ):
+        """The current implementation lists first, then prompts. Confirm the prompt's
+        non-TTY rejection still produces a clean zero-capture run with the right output."""
+        monkeypatch.setenv("GITHUB_TOKEN", "fake")
+
+        starred = [("alice", "repo1", "https://github.com/alice/repo1")]
+
+        async def fake_list_starred(self, user, limit=None):
+            return starred
+
+        with patch("capxure.cli.stars.GitHubClient.list_starred", new=fake_list_starred), \
+             patch("capxure.cli.stars.Storage.existing_urls", return_value=set()), \
+             patch("sys.stdin.isatty", return_value=False):
+            from capxure.cli.stars import command
+
+            rc = command(_make_args(yes=False, data_dir=str(tmp_path)))
+
+        # Aborted before any captures; failed=0 → exit 0
+        assert rc == 0
+        err = capsys.readouterr().err
+        assert "no TTY" in err
+        assert "captured: 0" in err
