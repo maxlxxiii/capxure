@@ -1,6 +1,6 @@
 """Core orchestrator.
 
-Coordinates GitHub API calls and local storage operations.
+Coordinates GitHub API calls and repo-store writes.
 Accepts a StatusCallback so consumers can surface progress.
 """
 from __future__ import annotations

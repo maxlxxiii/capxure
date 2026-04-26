@@ -1,4 +1,4 @@
-"""Integration smoke test for processor.process_repo() over the new storage."""
+"""Integration smoke test for processor.process_repo() over the local RepoStore."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -7,7 +7,7 @@ import pytest
 
 from capxure.db import Database
 from capxure.git.store import UpsertOutcome
-from capxure.processor import ProcessResult, Severity, process_repo
+from capxure.git.processor import ProcessResult, Severity, process_repo
 
 
 @pytest.mark.asyncio

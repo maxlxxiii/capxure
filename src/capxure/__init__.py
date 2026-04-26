@@ -9,7 +9,7 @@ from capxure.git.client import (
     RateLimitInfo,
     parse_github_url,
 )
-from capxure.processor import (
+from capxure.git.processor import (
     ProcessResult,
     Severity,
     StatusCallback,
