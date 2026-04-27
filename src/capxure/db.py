@@ -158,6 +158,7 @@ class Database:
         return self
 
     def __exit__(self, *exc_info) -> None:
+        self._conn.commit()
         self.close()
 
     def _ensure_schema(self) -> None:
