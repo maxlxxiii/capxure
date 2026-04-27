@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["Note", "NoteStore"]
+__all__ = ["Note", "NoteHit", "NoteStore"]
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,17 @@ class Note:
     source_locator: str | None
     kind_hint: str | None
     captured_at: str
+
+
+@dataclass(frozen=True)
+class NoteHit:
+    id: int
+    snippet: str
+    annotation: str | None
+    source: str | None
+    source_locator: str | None
+    captured_at: str
+    score: float
 
 
 class NoteStore:
@@ -115,6 +126,56 @@ class NoteStore:
 
         return [(row["source"], row["c"])
                 for row in self._connection.execute(sql, params).fetchall()]
+
+    def search(
+        self,
+        query: str,
+        *,
+        sources: list[str] | None = None,
+        k: int = 20,
+    ) -> list[NoteHit]:
+        """FTS5-backed search across content + annotation + source.
+
+        BM25 weights: content 1x, annotation 3x, source 8x — notes attributed
+        to a source rank above notes that just mention it in passing.
+        Snippets are from notes.content (col 0).
+        """
+        if not query.strip():
+            raise ValueError("query must not be empty")
+        k = max(1, min(k, 100))
+
+        sql_parts = [
+            "SELECT notes.id, notes.annotation, notes.source,",
+            "       notes.source_locator, notes.captured_at,",
+            "       COALESCE(snippet(notes_fts, 0, '<<', '>>', '...', 32), '') AS snippet,",
+            "       bm25(notes_fts, 1.0, 3.0, 8.0) AS score",
+            "FROM notes_fts",
+            "JOIN notes ON notes.id = notes_fts.rowid",
+            "WHERE notes_fts MATCH ?",
+        ]
+        params: list[Any] = [query]
+
+        if sources:
+            placeholders = ",".join("?" for _ in sources)
+            sql_parts.append(f"AND LOWER(notes.source) IN ({placeholders})")
+            params.extend(s.lower() for s in sources)
+
+        sql_parts.append("ORDER BY score ASC LIMIT ?")
+        params.append(k)
+
+        rows = self._connection.execute(" ".join(sql_parts), params).fetchall()
+        return [
+            NoteHit(
+                id=row["id"],
+                snippet=row["snippet"],
+                annotation=row["annotation"],
+                source=row["source"],
+                source_locator=row["source_locator"],
+                captured_at=row["captured_at"],
+                score=row["score"],
+            )
+            for row in rows
+        ]
 
     def _fetch_one(self, note_id: int) -> Note:
         row = self._connection.execute(

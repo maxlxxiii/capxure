@@ -23,7 +23,7 @@ from capxure.git.store import (
     RepoStore,
     UpsertOutcome,
 )
-from capxure.note import Note, NoteStore
+from capxure.note import Note, NoteHit, NoteStore
 
 __version__ = "0.5.0"
 
@@ -34,6 +34,7 @@ __all__ = [
     "GitHubClient",
     "GitHubError",
     "Note",
+    "NoteHit",
     "NoteStore",
     "NotFoundError",
     "ProcessResult",

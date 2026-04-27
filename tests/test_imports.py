@@ -11,6 +11,7 @@ EXPECTED_EXPORTS = {
     "GitHubClient",
     "GitHubError",
     "Note",
+    "NoteHit",
     "NoteStore",
     "NotFoundError",
     "ProcessResult",
