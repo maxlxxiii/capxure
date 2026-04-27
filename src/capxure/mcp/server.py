@@ -75,4 +75,28 @@ def build_server(db_path: Path | None = None) -> tuple[FastMCP, Database]:
             order=order, limit=limit,
         )
 
+    @app.tool()
+    def search_repos(
+        query: str,
+        topics: list[str] | None = None,
+        language: str | None = None,
+        k: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search captured GitHub repos by README + name + description (FTS5).
+
+        Plain words work fine; FTS5 operators (AND, OR, NEAR, "phrase") are also
+        accepted. Hits are ranked by BM25 (lower score = more relevant).
+
+        `topics` (list of strings, OR'd, case-insensitive exact match) and
+        `language` (exact match) compose with the text query. `k` defaults to 20,
+        capped at 100.
+
+        Each hit contains a `snippet` from the README (`<<...>>` markers around
+        matches) when the match is in the README; empty otherwise. Use get_readme
+        to fetch the full README for a promising hit.
+        """
+        return tools.search_repos(
+            db, query=query, topics=topics, language=language, k=k,
+        )
+
     return app, db

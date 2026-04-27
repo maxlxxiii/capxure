@@ -94,3 +94,29 @@ def list_sources(
         limit=limit,
     )
     return [{"source": s, "count": c} for s, c in rows]
+
+
+def search_repos(
+    db: Database,
+    *,
+    query: str,
+    topics: list[str] | None = None,
+    language: str | None = None,
+    k: int = 20,
+) -> list[dict[str, Any]]:
+    """FTS5 search over repos. Raises ValueError on empty query."""
+    hits = db.repos.search(query, topics=topics, language=language, k=k)
+    return [
+        {
+            "owner": h.owner,
+            "name": h.name,
+            "full_name": h.full_name,
+            "url": h.url,
+            "language": h.language,
+            "stars": h.stars,
+            "description": h.description,
+            "snippet": h.snippet,
+            "score": h.score,
+        }
+        for h in hits
+    ]

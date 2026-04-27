@@ -164,3 +164,52 @@ def test_list_sources_passes_filters(db_path):
         db.notes.add("b", source="lex")
         result = tools.list_sources(db, prefix="kar")
     assert result == [{"source": "karpathy", "count": 1}]
+
+
+# --- search_repos ---
+
+def test_search_repos_returns_hit_dicts(db_path):
+    with Database(db_path) as db:
+        _insert_repo(db, github_id=1, owner="o", name="r",
+                     language="Python", description="cool tool",
+                     stars=10, readme="auth library for python")
+        result = tools.search_repos(db, query="auth")
+    assert len(result) == 1
+    hit = result[0]
+    assert set(hit.keys()) == {
+        "owner", "name", "full_name", "url",
+        "language", "stars", "description",
+        "snippet", "score",
+    }
+    assert hit["owner"] == "o"
+    assert hit["language"] == "Python"
+    assert hit["stars"] == 10
+
+
+def test_search_repos_empty_query_raises(db_path):
+    with Database(db_path) as db:
+        with pytest.raises(ValueError):
+            tools.search_repos(db, query="")
+
+
+def test_search_repos_clamps_k(db_path):
+    """k > 100 is clamped server-side."""
+    with Database(db_path) as db:
+        for i in range(1, 6):
+            _insert_repo(db, github_id=i, owner="o", name=f"r{i}",
+                         readme="match")
+        result = tools.search_repos(db, query="match", k=999)
+    assert len(result) == 5  # only 5 hits exist
+
+
+def test_search_repos_passes_topic_filter(db_path):
+    with Database(db_path) as db:
+        _insert_repo(db, github_id=1, owner="o", name="a", readme="lib")
+        _insert_repo(db, github_id=2, owner="o", name="b", readme="lib")
+        db.connection.execute(
+            "INSERT INTO repo_topics (repo_id, topic) "
+            "SELECT id, 'rust' FROM repos WHERE name='a'"
+        )
+        result = tools.search_repos(db, query="lib", topics=["rust"])
+    assert len(result) == 1
+    assert result[0]["name"] == "a"
