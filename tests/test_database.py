@@ -163,3 +163,24 @@ def test_v3_or_later_db_raises(db_path):
     conn.close()
     with pytest.raises(UnsupportedSchemaError):
         Database(db_path)
+
+
+def test_notes_accessor_returns_notestore(db_path):
+    """db.notes returns a NoteStore over db.connection."""
+    from capxure.note import NoteStore
+    with Database(db_path) as db:
+        store = db.notes
+        assert isinstance(store, NoteStore)
+        assert store.connection is db.connection
+
+
+def test_notes_accessor_is_stable(db_path):
+    """Repeated access returns the same NoteStore instance (cached)."""
+    with Database(db_path) as db:
+        assert db.notes is db.notes
+
+
+def test_notes_and_repos_share_connection(db_path):
+    """db.notes and db.repos operate on the same connection."""
+    with Database(db_path) as db:
+        assert db.notes.connection is db.repos.connection

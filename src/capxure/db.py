@@ -10,6 +10,7 @@ from platformdirs import user_data_dir
 
 if TYPE_CHECKING:
     from capxure.git.store import RepoStore
+    from capxure.note import NoteStore
 
 __all__ = ["Database", "UnsupportedSchemaError"]
 
@@ -128,6 +129,7 @@ class Database:
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._ensure_schema()
         self._repos: "RepoStore | None" = None
+        self._notes: "NoteStore | None" = None
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -140,6 +142,14 @@ class Database:
             from capxure.git.store import RepoStore
             self._repos = RepoStore(self._conn)
         return self._repos
+
+    @property
+    def notes(self) -> "NoteStore":
+        """Lazy accessor — constructs a NoteStore over self.connection on first use."""
+        if self._notes is None:
+            from capxure.note import NoteStore
+            self._notes = NoteStore(self._conn)
+        return self._notes
 
     def close(self) -> None:
         self._conn.close()
