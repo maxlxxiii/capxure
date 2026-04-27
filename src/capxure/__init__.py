@@ -25,7 +25,7 @@ from capxure.git.store import (
 )
 from capxure.note import Note, NoteHit, NoteStore
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "AuthenticationError",
