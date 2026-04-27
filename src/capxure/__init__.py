@@ -19,6 +19,7 @@ from capxure.git.processor import (
 from capxure.git.store import (
     DuplicateRepoNameError,
     Repo,
+    RepoHit,
     RepoStore,
     UpsertOutcome,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "RateLimitExceededError",
     "RateLimitInfo",
     "Repo",
+    "RepoHit",
     "RepoStore",
     "Severity",
     "StatusCallback",

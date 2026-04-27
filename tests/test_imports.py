@@ -17,6 +17,7 @@ EXPECTED_EXPORTS = {
     "RateLimitExceededError",
     "RateLimitInfo",
     "Repo",
+    "RepoHit",
     "RepoStore",
     "Severity",
     "StatusCallback",

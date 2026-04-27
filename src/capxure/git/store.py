@@ -12,6 +12,7 @@ from typing import Any, Literal, Sequence
 __all__ = [
     "DuplicateRepoNameError",
     "Repo",
+    "RepoHit",
     "RepoStore",
     "UpsertOutcome",
 ]
@@ -55,6 +56,20 @@ class Repo:
     readme_sha: str | None
     captured_at: str
     last_synced_at: str
+
+
+@dataclass(frozen=True)
+class RepoHit:
+    """A single search hit. Lean shape — fetch full README via get_readme."""
+    owner: str
+    name: str
+    full_name: str
+    url: str
+    language: str | None
+    stars: int
+    description: str | None
+    snippet: str
+    score: float
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +366,68 @@ class RepoStore:
             url_list,
         )
         return {row[0] for row in cur}
+
+    def search(
+        self,
+        query: str,
+        *,
+        topics: Sequence[str] | None = None,
+        language: str | None = None,
+        k: int = 20,
+    ) -> list[RepoHit]:
+        """FTS5-backed search across full_name + description + readme_content.
+
+        BM25 weights: full_name 10x, description 5x, readme 1x.
+        Snippets are taken from readme_content (col 2) only — when the match
+        is on a shorter column, snippet is empty.
+        """
+        if not query.strip():
+            raise ValueError("query must not be empty")
+        k = max(1, min(k, 100))
+
+        sql_parts = [
+            "SELECT repos.owner, repos.name, repos.full_name, repos.url,",
+            "       repos.language, repos.stars, repos.description,",
+            "       COALESCE(snippet(repos_fts, 2, '<<', '>>', '...', 32), '') AS snippet,",
+            "       bm25(repos_fts, 10.0, 5.0, 1.0) AS score",
+            "FROM repos_fts",
+            "JOIN repos ON repos.id = repos_fts.rowid",
+            "WHERE repos_fts MATCH ?",
+        ]
+        params: list[Any] = [query]
+
+        if topics:
+            placeholders = ",".join("?" for _ in topics)
+            sql_parts.append(
+                f"AND repos.id IN ("
+                f"  SELECT repo_id FROM repo_topics "
+                f"  WHERE LOWER(topic) IN ({placeholders})"
+                f")"
+            )
+            params.extend(t.lower() for t in topics)
+
+        if language is not None:
+            sql_parts.append("AND repos.language = ?")
+            params.append(language)
+
+        sql_parts.append("ORDER BY score ASC LIMIT ?")
+        params.append(k)
+
+        rows = self.connection.execute(" ".join(sql_parts), params).fetchall()
+        return [
+            RepoHit(
+                owner=row["owner"],
+                name=row["name"],
+                full_name=row["full_name"],
+                url=row["url"],
+                language=row["language"],
+                stars=row["stars"],
+                description=row["description"],
+                snippet=row["snippet"],
+                score=row["score"],
+            )
+            for row in rows
+        ]
 
     def list_topic_counts(
         self,
