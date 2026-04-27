@@ -4,37 +4,7 @@ import pytest
 
 from capxure.db import Database
 from capxure.git.store import RepoHit
-
-
-def _insert_repo(
-    db,
-    *,
-    github_id: int,
-    owner: str,
-    name: str,
-    language: str | None = None,
-    description: str | None = None,
-    readme: str | None = None,
-    topics: list[str] | None = None,
-    stars: int = 0,
-) -> int:
-    """Insert a repo directly (bypassing upsert) for deterministic test data."""
-    cur = db.connection.execute(
-        "INSERT INTO repos "
-        "(github_id, owner, name, full_name, url, language, description, "
-        " readme_content, stars, metadata) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (github_id, owner, name, f"{owner}/{name}",
-         f"https://github.com/{owner}/{name}", language, description,
-         readme, stars, "{}"),
-    )
-    repo_id = cur.lastrowid
-    for topic in topics or []:
-        db.connection.execute(
-            "INSERT INTO repo_topics (repo_id, topic) VALUES (?, ?)",
-            (repo_id, topic),
-        )
-    return repo_id
+from tests.mcp._seed import insert_repo as _insert_repo
 
 
 def test_search_returns_hits(db_path):

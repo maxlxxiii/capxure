@@ -4,34 +4,7 @@ import pytest
 
 from capxure.db import Database
 from capxure.mcp import tools
-
-
-def _insert_repo(db, **kw) -> None:
-    db.connection.execute(
-        "INSERT INTO repos "
-        "(github_id, owner, name, full_name, url, language, description, "
-        " stars, forks, pushed_at, is_fork, is_archived, "
-        " readme_content, metadata) "
-        "VALUES (:github_id, :owner, :name, :full_name, :url, :language, "
-        " :description, :stars, :forks, :pushed_at, :is_fork, :is_archived, "
-        " :readme_content, :metadata)",
-        {
-            "github_id": kw["github_id"],
-            "owner": kw["owner"],
-            "name": kw["name"],
-            "full_name": f"{kw['owner']}/{kw['name']}",
-            "url": f"https://github.com/{kw['owner']}/{kw['name']}",
-            "language": kw.get("language"),
-            "description": kw.get("description"),
-            "stars": kw.get("stars", 0),
-            "forks": kw.get("forks", 0),
-            "pushed_at": kw.get("pushed_at"),
-            "is_fork": 1 if kw.get("is_fork") else 0,
-            "is_archived": 1 if kw.get("is_archived") else 0,
-            "readme_content": kw.get("readme"),
-            "metadata": "{}",
-        },
-    )
+from tests.mcp._seed import insert_repo as _insert_repo
 
 
 # --- get_repo ---
