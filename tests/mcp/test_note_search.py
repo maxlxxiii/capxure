@@ -19,24 +19,25 @@ def test_search_returns_hits(db_path):
 def test_source_outranks_content_match(db_path):
     """A note whose source matches the query ranks above one whose body mentions it.
 
-    Three-doc corpus exercises the 8x source-column weight directly:
-    a noise doc with the term buried in a long content body, a brief
-    note tagged with the term as source, and a third doc that does
-    not match (kept for IDF realism).  BM25 length-normalises the
-    content match down so the 8x source-column weight wins cleanly.
+    Three-doc corpus pins that the source column outranks the content
+    column for query terms, even when the content match is heavy.
+    (Catches an inversion of the BM25 weights, not a small reduction.)
     """
     with Database(db_path) as db:
-        # Content match — term buried in a long body; BM25 length-normalises it down.
+        # ~600-word body so BM25 length normalization down-weights the single
+        # 'karpathy' occurrence below the source-column contribution.
         db.notes.add("karpathy " + "lorem ipsum dolor sit amet " * 100, source="other")
-        # Source match — should win because of the 8x column weight.
+        # Source match — should win because the source column is weighted higher.
         db.notes.add("brief note", source="karpathy")
-        # Non-matching noise doc to keep IDF positive.
-        db.notes.add("an essay about ML training " * 5, source="lex")
+        # 5 non-matching noise docs for realistic IDF.
+        for i in range(5):
+            db.notes.add(f"an essay about ML training topic {i} " * 3,
+                         source=f"noise{i}")
         hits = db.notes.search("karpathy")
     # Source-tagged note ranks first.
     assert hits[0].source == "karpathy"
-    # Pin the 8x source weight: source match scores strictly better
-    # than the content match (lower BM25 = better rank).
+    # Pin source-vs-content ordering: the source column must beat content
+    # for the same term (lower BM25 = better rank).
     assert len(hits) >= 2
     assert hits[0].score < hits[1].score
 
