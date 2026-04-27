@@ -34,6 +34,16 @@ Progress events print to stderr (`info: Fetching metadata…`, `success: owner/r
 
 Exit codes: `0` success (including dedup-skip), `1` library-reported failure or missing token, `2` usage error, `3` malformed target, `130` Ctrl-C.
 
+GitHub commands live under `cap git`; quick-capture notes live under `cap note`:
+
+```
+cap note "fleeting thought"                          # quickest path; smart-dispatch to add
+cap note "great quote" -s "book:Atomic Habits" -L "p.42" -k quote
+echo "from a pipe" | cap note add -a "via stdin"
+cap note ls                                          # cards on a TTY, TSV when piped
+cap note ls --format plain                           # force TSV (7 fields per note)
+```
+
 ### Listing captured repos
 
 ```
@@ -76,6 +86,17 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+The `notes` domain works the same way:
+
+```python
+from capxure import Database
+
+with Database() as db:
+    note = db.notes.add("fleeting thought", source="twitter", kind_hint="quote")
+    for n in db.notes.list_notes():
+        print(n.id, n.content)
+```
+
 ## Database
 
 Capxure persists captured repos to a single SQLite database. The default location resolves in this order:
@@ -93,8 +114,11 @@ The schema is a documented public contract — you may run arbitrary SQL against
 
 - Table `repos` — one row per captured GitHub repo. Includes denormalized columns for common query hotspots (`language`, `stars`, `forks`, `pushed_at`, `is_fork`, `is_archived`), an inline `readme_content` column (nullable; `NULL` means "no README"), and the full GitHub API response preserved as JSON in `metadata`.
 - Table `repo_topics` — junction table for many-to-many topics. Composite primary key `(repo_id, topic)` provides insert-dedup; a secondary index on `topic` supports `WHERE topic = ?` filtering.
+- Table `notes` — append-only quick-capture inbox. `content` is the only required column; `annotation`, `source`, `source_locator`, and `kind_hint` are optional free-form strings; `captured_at` is set by SQLite default. No indexes — minimal `cap note ls` doesn't need them yet.
 
 The full DDL lives in `src/capxure/db.py` under `_SCHEMA_SQL`.
+
+Existing capxure databases at schema version 1 auto-upgrade to version 2 on next open (the upgrade adds the `notes` table; no data is touched).
 
 ### Python API
 
@@ -116,6 +140,8 @@ with Database() as db:
     all_repos = db.repos.list_repos()
 ```
 
+`Database.notes` returns a `NoteStore` for the catch-all notes inbox; `Database.repos` returns a `RepoStore` for git captures. Both share `db.connection` so a single transaction can span both domains via the SQL escape hatch.
+
 The `db.connection` property exposes the underlying `sqlite3.Connection` as an escape hatch for ad-hoc SQL:
 
 ```python
@@ -128,6 +154,12 @@ with Database() as db:
 ```
 
 ## Changelog
+
+### 0.5.0
+
+- New domain: `capxure.note` for low-friction quick-capture inbox. Add via `cap note "<text>"` (smart-dispatches to `cap note add`) with optional `-a/--annotation`, `-s/--source`, `-L/--loc`, `-k/--kind` flags. Stdin pipe supported when no positional given. List with `cap note ls` (pretty cards on TTY, TSV when piped).
+- Python: `Database.notes` returns a `NoteStore` with `add(...)`, `list_notes()`, `count_notes()`. New `Note` dataclass.
+- Schema bumped to v2 (added `notes` table, no indexes). Existing v1 databases auto-upgrade on next open. Forward-incompatible dbs still raise `UnsupportedSchemaError`.
 
 ### 0.4.0
 
