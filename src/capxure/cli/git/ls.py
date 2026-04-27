@@ -81,7 +81,7 @@ def command(args: argparse.Namespace) -> int:
         with Database() as db:
             if args.subject == "topics":
                 topic_rows = db.repos.list_topic_counts(
-                    reverse=args.reverse,
+                    order="count_asc" if args.reverse else "count_desc",
                     limit=limit,
                 )
                 if fmt == "pretty":

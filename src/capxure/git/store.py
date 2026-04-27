@@ -291,6 +291,12 @@ class RepoStore:
         "stars": "stars",
     }
 
+    _VALID_TOPIC_ORDERS: dict[str, str] = {
+        "count_desc": "c DESC, topic ASC",
+        "count_asc":  "c ASC, topic ASC",
+        "topic_asc": "topic ASC",
+    }
+
     def list_repos(
         self,
         *,
@@ -349,25 +355,49 @@ class RepoStore:
     def list_topic_counts(
         self,
         *,
-        reverse: bool = False,
+        prefix: str | None = None,
+        min_count: int | None = None,
+        max_count: int | None = None,
+        order: str = "count_desc",
         limit: int | None = None,
     ) -> list[tuple[str, int]]:
         """Return (topic, count) pairs across all captured repos.
 
-        Default order: count descending, then topic ascending as tie-break.
-        `reverse=True` flips to count ascending, topic ascending.
+        Filters compose: WHERE prefix, HAVING min/max_count, ORDER BY order.
         """
-        direction = "ASC" if reverse else "DESC"
-        sql = (
-            "SELECT topic, COUNT(*) AS c FROM repo_topics "
-            "GROUP BY topic "
-            f"ORDER BY c {direction}, topic ASC"
-        )
+        if order not in self._VALID_TOPIC_ORDERS:
+            raise ValueError(
+                f"order must be one of {sorted(self._VALID_TOPIC_ORDERS)}, got {order!r}"
+            )
+        order_clause = self._VALID_TOPIC_ORDERS[order]
+
+        where_parts: list[str] = []
         params: list[Any] = []
+        if prefix is not None:
+            where_parts.append("LOWER(topic) LIKE ?")
+            params.append(prefix.lower() + "%")
+
+        having_parts: list[str] = []
+        if min_count is not None:
+            having_parts.append("c >= ?")
+            params.append(min_count)
+        if max_count is not None:
+            having_parts.append("c <= ?")
+            params.append(max_count)
+
+        sql = "SELECT topic, COUNT(*) AS c FROM repo_topics"
+        if where_parts:
+            sql += " WHERE " + " AND ".join(where_parts)
+        sql += " GROUP BY topic"
+        if having_parts:
+            sql += " HAVING " + " AND ".join(having_parts)
+        sql += f" ORDER BY {order_clause}"
         if limit is not None:
             sql += " LIMIT ?"
             params.append(limit)
-        return [(row["topic"], row["c"]) for row in self.connection.execute(sql, params).fetchall()]
+
+        return [(row["topic"], row["c"])
+                for row in self.connection.execute(sql, params).fetchall()]
 
     def get_metadata_json(self, owner: str, name: str) -> dict[str, Any] | None:
         row = self.connection.execute(
