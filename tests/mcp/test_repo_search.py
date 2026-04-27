@@ -74,6 +74,10 @@ def test_full_name_outranks_readme(db_path):
         )
         hits = db.repos.search("react")
     assert hits[0].name == "react"
+    # Pin the BM25 weighting itself: full_name match must score
+    # strictly better than the README match (lower = better rank).
+    assert len(hits) >= 2
+    assert hits[0].score < hits[1].score
 
 
 def test_topic_filter(db_path):
