@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 __all__ = ["Database", "UnsupportedSchemaError"]
 
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _SCHEMA_SQL = """
 CREATE TABLE repos (
@@ -63,7 +63,69 @@ CREATE TABLE notes (
     captured_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-PRAGMA user_version = 2;
+CREATE VIRTUAL TABLE repos_fts USING fts5(
+    full_name, description, readme_content,
+    content='repos', content_rowid='id',
+    tokenize='porter unicode61'
+);
+
+CREATE VIRTUAL TABLE notes_fts USING fts5(
+    content, annotation, source,
+    content='notes', content_rowid='id',
+    tokenize='porter unicode61'
+);
+
+CREATE TRIGGER repos_ai AFTER INSERT ON repos BEGIN
+    INSERT INTO repos_fts(rowid, full_name, description, readme_content)
+    VALUES (new.id, new.full_name,
+            COALESCE(new.description, ''),
+            COALESCE(new.readme_content, ''));
+END;
+
+CREATE TRIGGER repos_ad AFTER DELETE ON repos BEGIN
+    INSERT INTO repos_fts(repos_fts, rowid, full_name, description, readme_content)
+    VALUES ('delete', old.id, old.full_name,
+            COALESCE(old.description, ''),
+            COALESCE(old.readme_content, ''));
+END;
+
+CREATE TRIGGER repos_au AFTER UPDATE ON repos BEGIN
+    INSERT INTO repos_fts(repos_fts, rowid, full_name, description, readme_content)
+    VALUES ('delete', old.id, old.full_name,
+            COALESCE(old.description, ''),
+            COALESCE(old.readme_content, ''));
+    INSERT INTO repos_fts(rowid, full_name, description, readme_content)
+    VALUES (new.id, new.full_name,
+            COALESCE(new.description, ''),
+            COALESCE(new.readme_content, ''));
+END;
+
+CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+    INSERT INTO notes_fts(rowid, content, annotation, source)
+    VALUES (new.id, new.content,
+            COALESCE(new.annotation, ''),
+            COALESCE(new.source, ''));
+END;
+
+CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, content, annotation, source)
+    VALUES ('delete', old.id, old.content,
+            COALESCE(old.annotation, ''),
+            COALESCE(old.source, ''));
+END;
+
+CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, content, annotation, source)
+    VALUES ('delete', old.id, old.content,
+            COALESCE(old.annotation, ''),
+            COALESCE(old.source, ''));
+    INSERT INTO notes_fts(rowid, content, annotation, source)
+    VALUES (new.id, new.content,
+            COALESCE(new.annotation, ''),
+            COALESCE(new.source, ''));
+END;
+
+PRAGMA user_version = 3;
 """
 
 # Each _MIGRATIONS[v] body is intentionally duplicated into _SCHEMA_SQL.
@@ -82,6 +144,83 @@ _MIGRATIONS = {
             captured_at     TEXT NOT NULL DEFAULT (datetime('now'))
         );
         PRAGMA user_version = 2;
+    """,
+    3: """
+        CREATE VIRTUAL TABLE repos_fts USING fts5(
+            full_name, description, readme_content,
+            content='repos', content_rowid='id',
+            tokenize='porter unicode61'
+        );
+
+        CREATE VIRTUAL TABLE notes_fts USING fts5(
+            content, annotation, source,
+            content='notes', content_rowid='id',
+            tokenize='porter unicode61'
+        );
+
+        INSERT INTO repos_fts(rowid, full_name, description, readme_content)
+        SELECT id, full_name,
+               COALESCE(description, ''),
+               COALESCE(readme_content, '')
+        FROM repos;
+
+        INSERT INTO notes_fts(rowid, content, annotation, source)
+        SELECT id, content,
+               COALESCE(annotation, ''),
+               COALESCE(source, '')
+        FROM notes;
+
+        CREATE TRIGGER repos_ai AFTER INSERT ON repos BEGIN
+            INSERT INTO repos_fts(rowid, full_name, description, readme_content)
+            VALUES (new.id, new.full_name,
+                    COALESCE(new.description, ''),
+                    COALESCE(new.readme_content, ''));
+        END;
+
+        CREATE TRIGGER repos_ad AFTER DELETE ON repos BEGIN
+            INSERT INTO repos_fts(repos_fts, rowid, full_name, description, readme_content)
+            VALUES ('delete', old.id, old.full_name,
+                    COALESCE(old.description, ''),
+                    COALESCE(old.readme_content, ''));
+        END;
+
+        CREATE TRIGGER repos_au AFTER UPDATE ON repos BEGIN
+            INSERT INTO repos_fts(repos_fts, rowid, full_name, description, readme_content)
+            VALUES ('delete', old.id, old.full_name,
+                    COALESCE(old.description, ''),
+                    COALESCE(old.readme_content, ''));
+            INSERT INTO repos_fts(rowid, full_name, description, readme_content)
+            VALUES (new.id, new.full_name,
+                    COALESCE(new.description, ''),
+                    COALESCE(new.readme_content, ''));
+        END;
+
+        CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+            INSERT INTO notes_fts(rowid, content, annotation, source)
+            VALUES (new.id, new.content,
+                    COALESCE(new.annotation, ''),
+                    COALESCE(new.source, ''));
+        END;
+
+        CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
+            INSERT INTO notes_fts(notes_fts, rowid, content, annotation, source)
+            VALUES ('delete', old.id, old.content,
+                    COALESCE(old.annotation, ''),
+                    COALESCE(old.source, ''));
+        END;
+
+        CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+            INSERT INTO notes_fts(notes_fts, rowid, content, annotation, source)
+            VALUES ('delete', old.id, old.content,
+                    COALESCE(old.annotation, ''),
+                    COALESCE(old.source, ''));
+            INSERT INTO notes_fts(rowid, content, annotation, source)
+            VALUES (new.id, new.content,
+                    COALESCE(new.annotation, ''),
+                    COALESCE(new.source, ''));
+        END;
+
+        PRAGMA user_version = 3;
     """,
 }
 

@@ -8,7 +8,7 @@ from capxure.db import Database, UnsupportedSchemaError
 
 
 def test_fresh_db_creation(db_path):
-    """A new Database() creates the db file, schema, and sets user_version=2."""
+    """A new Database() creates the db file, schema, and sets user_version=3."""
     assert not db_path.exists()
     with Database(db_path) as db:
         assert db_path.exists()
@@ -20,7 +20,7 @@ def test_fresh_db_creation(db_path):
         assert "repo_topics" in tables
         assert "notes" in tables
         version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 2
+        assert version == 3
 
 
 def test_reopen_existing_db(db_path):
@@ -29,7 +29,7 @@ def test_reopen_existing_db(db_path):
         pass
     with Database(db_path) as db:
         version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 2
+        assert version == 3
 
 
 def test_unsupported_schema_raises(db_path):
@@ -89,10 +89,10 @@ def test_notes_table_has_expected_columns(db_path):
     }
 
 
-def test_v1_db_auto_upgrades_to_v2(db_path):
+def test_v1_db_auto_upgrades_to_v3(db_path):
     """A pre-existing v1 db (repos + repo_topics, user_version=1) auto-upgrades
-    on open: user_version becomes 2 and the notes table exists. Existing repo
-    rows remain readable."""
+    on open: user_version becomes 3 and the notes table exists. Existing repo
+    rows remain readable. The migration runner walks v1->v2->v3 automatically."""
     # Hand-build a v1 schema to simulate a database from before this change.
     conn = sqlite3.connect(db_path)
     conn.executescript("""
@@ -140,7 +140,7 @@ def test_v1_db_auto_upgrades_to_v2(db_path):
 
     with Database(db_path) as db:
         version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 2
+        assert version == 3
         # notes table now exists
         tables = {
             row[0] for row in db.connection.execute(
@@ -155,10 +155,10 @@ def test_v1_db_auto_upgrades_to_v2(db_path):
         assert row["full_name"] == "octocat/hello"
 
 
-def test_v3_or_later_db_raises(db_path):
+def test_v4_or_later_db_raises(db_path):
     """A db at a future schema version still raises, just as v999 always did."""
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA user_version = 3")
+    conn.execute("PRAGMA user_version = 4")
     conn.commit()
     conn.close()
     with pytest.raises(UnsupportedSchemaError):
