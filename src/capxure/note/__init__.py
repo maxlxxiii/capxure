@@ -25,7 +25,7 @@ class NoteStore:
     _VALID_SOURCE_ORDERS: dict[str, str] = {
         "count_desc": "c DESC, source ASC",
         "count_asc":  "c ASC, source ASC",
-        "topic_asc": "source ASC",
+        "source_asc": "source ASC",
     }
 
     def __init__(self, connection: sqlite3.Connection) -> None:

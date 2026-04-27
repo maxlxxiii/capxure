@@ -43,10 +43,10 @@ def test_min_max_count(db_path):
     assert rows == [("b", 3)]
 
 
-def test_order_topic_asc(db_path):
+def test_order_source_asc(db_path):
     with Database(db_path) as db:
         _seed_notes(db, {"karpathy": 3, "altman": 1})
-        rows = db.notes.list_source_counts(order="topic_asc")
+        rows = db.notes.list_source_counts(order="source_asc")
     assert rows == [("altman", 1), ("karpathy", 3)]
 
 
