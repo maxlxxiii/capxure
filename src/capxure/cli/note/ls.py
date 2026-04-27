@@ -77,7 +77,8 @@ def _emit_pretty(notes: list[Note]) -> None:
             print(f"loc: {n.source_locator}")
         if n.annotation:
             print(f"note: {n.annotation}")
-        for line in n.content.splitlines() or [""]:
+        # n.content is guaranteed non-empty by NoteStore.add (strips + rejects empty).
+        for line in n.content.splitlines():
             print(f"> {line}")
 
 
