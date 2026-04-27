@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import threading
 
 
 def _send(proc: subprocess.Popen, payload: dict) -> None:
@@ -15,6 +16,19 @@ def _recv(proc: subprocess.Popen) -> dict:
     line = proc.stdout.readline()
     assert line, "MCP server returned no response"
     return json.loads(line.decode("utf-8"))
+
+
+def _drain_stderr(proc: subprocess.Popen, sink: list[bytes]) -> threading.Thread:
+    """Spawn a daemon thread that reads stderr until EOF into `sink`."""
+    def _pump():
+        while True:
+            chunk = proc.stderr.read(4096)
+            if not chunk:
+                return
+            sink.append(chunk)
+    t = threading.Thread(target=_pump, daemon=True)
+    t.start()
+    return t
 
 
 def _seed(db_path):
@@ -45,6 +59,8 @@ def test_cap_mcp_initializes_and_calls_tool(tmp_path):
         stderr=subprocess.PIPE,
         env=env,
     )
+    stderr_chunks: list[bytes] = []
+    drain_thread = _drain_stderr(proc, stderr_chunks)
 
     try:
         # 1. initialize
@@ -103,10 +119,28 @@ def test_cap_mcp_initializes_and_calls_tool(tmp_path):
         assert len(payload) >= 1
         assert payload[0]["name"] == "hello-auth"
         assert payload[0]["full_name"] == "octocat/hello-auth"
-    finally:
+    except AssertionError:
+        # Surface anything the server wrote to stderr — usually the
+        # actual cause when the assertions above start failing.
         proc.stdin.close()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        drain_thread.join(timeout=2)
+        stderr_text = b"".join(stderr_chunks).decode("utf-8", "replace")
+        if stderr_text.strip():
+            print("\n--- cap mcp stderr ---\n" + stderr_text + "\n----------------------")
+        raise
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        drain_thread.join(timeout=2)
