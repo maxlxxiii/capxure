@@ -118,11 +118,15 @@ def test_v1_db_auto_upgrades_to_v2(db_path):
             last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE (owner, name)
         );
+        CREATE INDEX idx_repos_language ON repos(language);
+        CREATE INDEX idx_repos_stars    ON repos(stars);
+        CREATE INDEX idx_repos_pushed   ON repos(pushed_at);
         CREATE TABLE repo_topics (
             repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
             topic TEXT NOT NULL,
             PRIMARY KEY (repo_id, topic)
         );
+        CREATE INDEX idx_repo_topics_topic ON repo_topics(topic);
         PRAGMA user_version = 1;
     """)
     # Seed a row so we can confirm it survives the migration.

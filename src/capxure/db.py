@@ -65,6 +65,10 @@ CREATE TABLE notes (
 PRAGMA user_version = 2;
 """
 
+# Each _MIGRATIONS[v] body is intentionally duplicated into _SCHEMA_SQL.
+# Fresh installs run _SCHEMA_SQL once; existing dbs run only the relevant
+# _MIGRATIONS[v] entries. Future migrations that aren't pure CREATE TABLE
+# (e.g., ALTER, data backfills) will diverge from _SCHEMA_SQL on purpose.
 _MIGRATIONS = {
     2: """
         CREATE TABLE notes (
