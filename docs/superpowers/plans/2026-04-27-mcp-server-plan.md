@@ -1003,10 +1003,20 @@ def test_search_returns_hits(db_path):
 def test_full_name_outranks_readme(db_path):
     """A match in full_name ranks above a match buried in a long README."""
     with Database(db_path) as db:
+        # 8 noise repos so the term doesn't appear in every indexed doc.
+        for i in range(8):
+            _insert_repo(db, github_id=100 + i, owner="noise", name=f"r{i}",
+                         readme="lorem ipsum dolor sit amet " * 5)
+        # full_name match.
         _insert_repo(db, github_id=1, owner="facebook", name="react",
-                     readme="lorem ipsum dolor sit amet" * 100)
-        _insert_repo(db, github_id=2, owner="o", name="other",
-                     readme=("react " * 200))
+                     readme="lorem ipsum dolor sit amet " * 100)
+        # README match — term buried once in a long body.
+        _insert_repo(
+            db, github_id=2, owner="o", name="other",
+            readme=("lorem ipsum dolor sit amet " * 100)
+                   + " react "
+                   + ("lorem ipsum dolor sit amet " * 100),
+        )
         hits = db.repos.search("react")
     assert hits[0].name == "react"
 
