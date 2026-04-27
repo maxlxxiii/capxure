@@ -4,7 +4,7 @@ import pytest
 
 from capxure.db import Database
 from capxure.git.store import RepoHit
-from tests.mcp._seed import insert_repo as _insert_repo
+from ._seed import insert_repo as _insert_repo
 
 
 def test_search_returns_hits(db_path):

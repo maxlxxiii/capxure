@@ -4,7 +4,7 @@ import pytest
 
 from capxure.db import Database
 from capxure.mcp import tools
-from tests.mcp._seed import insert_repo as _insert_repo
+from ._seed import insert_repo as _insert_repo
 
 
 # --- get_repo ---
