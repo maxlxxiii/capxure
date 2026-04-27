@@ -86,6 +86,11 @@ def _sha256_hex(content: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# BM25 column weights, in repos_fts column order: full_name, description, readme_content.
+# Tuned to keep direct name matches above incidental README mentions.
+_REPO_BM25_WEIGHTS: tuple[float, float, float] = (10.0, 5.0, 1.0)
+
+
 class RepoStore:
     """Repo-domain queries. Construct over a connection from `Database`."""
 
@@ -389,7 +394,7 @@ class RepoStore:
             "SELECT repos.owner, repos.name, repos.full_name, repos.url,",
             "       repos.language, repos.stars, repos.description,",
             "       COALESCE(snippet(repos_fts, 2, '<<', '>>', '...', 32), '') AS snippet,",
-            "       bm25(repos_fts, 10.0, 5.0, 1.0) AS score",
+            f"       bm25(repos_fts, {_REPO_BM25_WEIGHTS[0]}, {_REPO_BM25_WEIGHTS[1]}, {_REPO_BM25_WEIGHTS[2]}) AS score",
             "FROM repos_fts",
             "JOIN repos ON repos.id = repos_fts.rowid",
             "WHERE repos_fts MATCH ?",

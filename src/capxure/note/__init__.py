@@ -31,6 +31,11 @@ class NoteHit:
     score: float
 
 
+# BM25 column weights, in notes_fts column order: content, annotation, source.
+# Notes attributed to a source rank above notes that just mention it.
+_NOTE_BM25_WEIGHTS: tuple[float, float, float] = (1.0, 3.0, 8.0)
+
+
 class NoteStore:
     """Note-domain queries. Construct over a connection from `Database`."""
 
@@ -149,7 +154,7 @@ class NoteStore:
             "SELECT notes.id, notes.annotation, notes.source,",
             "       notes.source_locator, notes.captured_at,",
             "       COALESCE(snippet(notes_fts, 0, '<<', '>>', '...', 32), '') AS snippet,",
-            "       bm25(notes_fts, 1.0, 3.0, 8.0) AS score",
+            f"       bm25(notes_fts, {_NOTE_BM25_WEIGHTS[0]}, {_NOTE_BM25_WEIGHTS[1]}, {_NOTE_BM25_WEIGHTS[2]}) AS score",
             "FROM notes_fts",
             "JOIN notes ON notes.id = notes_fts.rowid",
             "WHERE notes_fts MATCH ?",
