@@ -1394,6 +1394,11 @@ Expected: FAIL — `NoteHit` and `NoteStore.search` don't exist.
 
 Modify `src/capxure/note/__init__.py`:
 
+Add `Sequence` to imports (used by `search`'s `sources` parameter — `Sequence` matches the type used on the parallel `RepoStore.search` and accepts tuples from JSON-decoded inputs):
+```python
+from collections.abc import Sequence
+```
+
 Update `__all__`:
 ```python
 __all__ = ["Note", "NoteHit", "NoteStore"]
@@ -1420,7 +1425,7 @@ def search(
     self,
     query: str,
     *,
-    sources: list[str] | None = None,
+    sources: Sequence[str] | None = None,
     k: int = 20,
 ) -> list[NoteHit]:
     """FTS5-backed search across content + annotation + source.
