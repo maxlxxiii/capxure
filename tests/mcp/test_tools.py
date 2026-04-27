@@ -75,6 +75,14 @@ def test_get_repo_includes_topics(db_path):
     assert sorted(result["topics"]) == ["cli", "rust"]
 
 
+def test_get_repo_includes_github_id(db_path):
+    with Database(db_path) as db:
+        _insert_repo(db, github_id=12345, owner="o", name="r")
+        result = tools.get_repo(db, owner="o", name="r")
+    assert result is not None
+    assert result["github_id"] == 12345
+
+
 # --- get_readme ---
 
 def test_get_readme_returns_content(db_path):

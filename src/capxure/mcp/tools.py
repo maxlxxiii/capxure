@@ -20,6 +20,7 @@ def get_repo(db: Database, *, owner: str, name: str) -> dict[str, Any] | None:
         return None
     return {
         "owner": repo.owner,
+        "github_id": repo.github_id,
         "name": repo.name,
         "full_name": repo.full_name,
         "url": repo.url,
