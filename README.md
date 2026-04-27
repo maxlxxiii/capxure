@@ -58,6 +58,51 @@ Plain output is tab-separated and intended for scripts; the description field ha
 
 Exit codes for `ls`: `0` success (including empty results), `2` usage error, `130` Ctrl-C.
 
+## MCP server (`cap mcp`)
+
+`cap mcp` runs a read-only Model Context Protocol server over stdio that exposes captured repos and notes to AI consumers like Claude Code. It only reads; capture still happens through the regular `cap git` and `cap note` CLIs.
+
+Wire it into Claude Code's `mcp_servers` configuration:
+
+```json
+{
+  "mcpServers": {
+    "capxure": {
+      "command": "cap",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or with a custom data directory:
+
+```json
+{
+  "mcpServers": {
+    "capxure": {
+      "command": "cap",
+      "args": ["mcp", "--data-dir", "/path/to/capxure-data"]
+    }
+  }
+}
+```
+
+### Tools
+
+- `search_repos(query, topics?, language?, k?)` — FTS5 search across captured repos.
+- `get_repo(owner, name)` — full structured metadata for one repo.
+- `get_readme(owner, name)` — full README text.
+- `list_topics(prefix?, min_count?, max_count?, order?, limit?)` — discovery: what topics exist.
+- `search_notes(query, sources?, k?)` — FTS5 search across notes.
+- `list_sources(prefix?, min_count?, max_count?, order?, limit?)` — discovery: what sources you've taken notes from.
+
+### Search-then-fetch
+
+Searches return lean hits with snippets; use `get_readme` / `get_repo` to pull full content for the hits worth investigating. This composes cheaply — searches stay fast and small, and full-document fetches happen only after you've decided you want one.
+
+The server is stdio-only (no HTTP) and read-only (no capture tools — use the regular `cap git` / `cap note` CLIs for ingest).
+
 ## Library usage
 
 For programmatic use, import directly. Your consumer code is responsible for obtaining a GitHub personal-access token (e.g., via `python-dotenv`, your shell environment, or a secrets manager) and passing it to `GitHubClient`.
