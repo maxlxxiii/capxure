@@ -98,3 +98,69 @@ def test_get_readme_repo_with_no_readme(db_path):
         _insert_repo(db, github_id=1, owner="o", name="r", readme=None)
         result = tools.get_readme(db, owner="o", name="r")
     assert result == {"owner": "o", "name": "r", "readme_content": None}
+
+
+# --- list_topics ---
+
+def test_list_topics_returns_list_of_dicts(db_path):
+    with Database(db_path) as db:
+        _insert_repo(db, github_id=1, owner="o", name="a")
+        _insert_repo(db, github_id=2, owner="o", name="b")
+        repo_ids = [r[0] for r in db.connection.execute("SELECT id FROM repos")]
+        for rid in repo_ids:
+            db.connection.execute(
+                "INSERT INTO repo_topics (repo_id, topic) VALUES (?, 'rust')",
+                (rid,),
+            )
+        result = tools.list_topics(db)
+    assert result == [{"topic": "rust", "count": 2}]
+
+
+def test_list_topics_passes_filters(db_path):
+    """Filters defined on the tool flow through to list_topic_counts."""
+    with Database(db_path) as db:
+        for i, topic in enumerate(["py-a", "py-b", "rust"], start=1):
+            _insert_repo(db, github_id=i, owner="o", name=f"r{i}")
+            db.connection.execute(
+                "INSERT INTO repo_topics (repo_id, topic) VALUES (?, ?)",
+                (i, topic),
+            )
+        result = tools.list_topics(db, prefix="py")
+    topics = {r["topic"] for r in result}
+    assert topics == {"py-a", "py-b"}
+
+
+def test_list_topics_clamps_limit(db_path):
+    """limit > 500 is clamped server-side."""
+    with Database(db_path) as db:
+        for i in range(1, 6):
+            _insert_repo(db, github_id=i, owner="o", name=f"r{i}")
+            db.connection.execute(
+                "INSERT INTO repo_topics (repo_id, topic) VALUES (?, ?)",
+                (i, f"t{i}"),
+            )
+        # Should not raise even though we ask for 999.
+        result = tools.list_topics(db, limit=999)
+    assert len(result) == 5  # only 5 topics exist
+
+
+# --- list_sources ---
+
+def test_list_sources_returns_dicts(db_path):
+    with Database(db_path) as db:
+        db.notes.add("n1", source="karpathy")
+        db.notes.add("n2", source="karpathy")
+        db.notes.add("n3", source="lex")
+        result = tools.list_sources(db)
+    assert result == [
+        {"source": "karpathy", "count": 2},
+        {"source": "lex", "count": 1},
+    ]
+
+
+def test_list_sources_passes_filters(db_path):
+    with Database(db_path) as db:
+        db.notes.add("a", source="karpathy")
+        db.notes.add("b", source="lex")
+        result = tools.list_sources(db, prefix="kar")
+    assert result == [{"source": "karpathy", "count": 1}]

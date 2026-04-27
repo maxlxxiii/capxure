@@ -36,4 +36,43 @@ def build_server(db_path: Path | None = None) -> tuple[FastMCP, Database]:
         """
         return tools.get_readme(db, owner=owner, name=name)
 
+    @app.tool()
+    def list_topics(
+        prefix: str | None = None,
+        min_count: int | None = None,
+        max_count: int | None = None,
+        order: str = "count_desc",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List topic names with their repo counts.
+
+        `order` is one of "count_desc" (default), "count_asc", "topic_asc".
+        `prefix` filters to topics starting with the given string (case-insensitive).
+        `min_count` / `max_count` bound the result by topic frequency.
+        Useful for discovering what topics exist before filtering search_repos.
+        """
+        return tools.list_topics(
+            db, prefix=prefix, min_count=min_count, max_count=max_count,
+            order=order, limit=limit,
+        )
+
+    @app.tool()
+    def list_sources(
+        prefix: str | None = None,
+        min_count: int | None = None,
+        max_count: int | None = None,
+        order: str = "count_desc",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List note sources with their note counts.
+
+        `order` is one of "count_desc" (default), "count_asc", "source_asc".
+        Same shape as list_topics but over notes.source. NULL sources are excluded.
+        Useful for discovering what authors/projects you've taken notes from.
+        """
+        return tools.list_sources(
+            db, prefix=prefix, min_count=min_count, max_count=max_count,
+            order=order, limit=limit,
+        )
+
     return app, db

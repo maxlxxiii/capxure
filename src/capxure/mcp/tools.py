@@ -52,3 +52,45 @@ def get_readme(
         "name": repo.name,
         "readme_content": repo.readme_content,
     }
+
+
+def list_topics(
+    db: Database,
+    *,
+    prefix: str | None = None,
+    min_count: int | None = None,
+    max_count: int | None = None,
+    order: str = "count_desc",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return [{topic, count}, ...] across captured repos."""
+    limit = max(1, min(limit, 500))
+    rows = db.repos.list_topic_counts(
+        prefix=prefix,
+        min_count=min_count,
+        max_count=max_count,
+        order=order,
+        limit=limit,
+    )
+    return [{"topic": t, "count": c} for t, c in rows]
+
+
+def list_sources(
+    db: Database,
+    *,
+    prefix: str | None = None,
+    min_count: int | None = None,
+    max_count: int | None = None,
+    order: str = "count_desc",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return [{source, count}, ...] across notes (NULL sources excluded)."""
+    limit = max(1, min(limit, 500))
+    rows = db.notes.list_source_counts(
+        prefix=prefix,
+        min_count=min_count,
+        max_count=max_count,
+        order=order,
+        limit=limit,
+    )
+    return [{"source": s, "count": c} for s, c in rows]
