@@ -157,9 +157,14 @@ class Database:
     def __enter__(self) -> "Database":
         return self
 
-    def __exit__(self, *exc_info) -> None:
-        self._conn.commit()
-        self.close()
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        finally:
+            self.close()
 
     def _ensure_schema(self) -> None:
         cur = self._conn.execute("PRAGMA user_version")

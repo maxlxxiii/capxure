@@ -160,6 +160,7 @@ with Database() as db:
 - New domain: `capxure.note` for low-friction quick-capture inbox. Add via `cap note "<text>"` (smart-dispatches to `cap note add`) with optional `-a/--annotation`, `-s/--source`, `-L/--loc`, `-k/--kind` flags. Stdin pipe supported when no positional given. List with `cap note ls` (pretty cards on TTY, TSV when piped).
 - Python: `Database.notes` returns a `NoteStore` with `add(...)`, `list_notes()`, `count_notes()`. New `Note` dataclass.
 - Schema bumped to v2 (added `notes` table, no indexes). Existing v1 databases auto-upgrade on next open. Forward-incompatible dbs still raise `UnsupportedSchemaError`.
+- Fix: `Database.__exit__` now commits pending writes (and rolls back on exception) before closing the connection — required for cross-connection visibility within the same process.
 
 ### 0.4.0
 

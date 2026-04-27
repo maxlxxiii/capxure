@@ -202,3 +202,23 @@ def test_exit_commits_pending_writes_so_a_second_connection_sees_them(db_path):
     with Database(db_path) as db2:
         count = db2.connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
     assert count == 1
+
+
+def test_exit_rolls_back_on_exception(db_path):
+    """If the `with Database()` block raises, pending writes must NOT commit.
+    Without this, partial multi-statement work would land silently on errors."""
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        with Database(db_path) as db:
+            db.connection.execute(
+                "INSERT INTO notes (content) VALUES (?)", ("should-not-persist",)
+            )
+            raise Boom("simulated mid-write failure")
+
+    with Database(db_path) as db2:
+        count = db2.connection.execute(
+            "SELECT COUNT(*) FROM notes WHERE content = 'should-not-persist'"
+        ).fetchone()[0]
+    assert count == 0
