@@ -8,7 +8,7 @@ from capxure.db import Database, UnsupportedSchemaError
 
 
 def test_fresh_db_creation(db_path):
-    """A new Database() creates the db file, schema, and sets user_version=1."""
+    """A new Database() creates the db file, schema, and sets user_version=2."""
     assert not db_path.exists()
     with Database(db_path) as db:
         assert db_path.exists()
@@ -18,8 +18,9 @@ def test_fresh_db_creation(db_path):
         tables = {row[0] for row in cursor.fetchall()}
         assert "repos" in tables
         assert "repo_topics" in tables
+        assert "notes" in tables
         version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 1
+        assert version == 2
 
 
 def test_reopen_existing_db(db_path):
@@ -28,7 +29,7 @@ def test_reopen_existing_db(db_path):
         pass
     with Database(db_path) as db:
         version = db.connection.execute("PRAGMA user_version").fetchone()[0]
-        assert version == 1
+        assert version == 2
 
 
 def test_unsupported_schema_raises(db_path):
@@ -69,3 +70,92 @@ def test_repos_accessor_is_stable(db_path):
     """Repeated access returns the same RepoStore instance (cached)."""
     with Database(db_path) as db:
         assert db.repos is db.repos
+
+
+def test_notes_table_has_expected_columns(db_path):
+    """Fresh notes table has exactly the columns from the spec."""
+    with Database(db_path) as db:
+        cols = {
+            row[1] for row in db.connection.execute("PRAGMA table_info(notes)")
+        }
+    assert cols == {
+        "id",
+        "content",
+        "annotation",
+        "source",
+        "source_locator",
+        "kind_hint",
+        "captured_at",
+    }
+
+
+def test_v1_db_auto_upgrades_to_v2(db_path):
+    """A pre-existing v1 db (repos + repo_topics, user_version=1) auto-upgrades
+    on open: user_version becomes 2 and the notes table exists. Existing repo
+    rows remain readable."""
+    # Hand-build a v1 schema to simulate a database from before this change.
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE repos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            github_id INTEGER UNIQUE NOT NULL,
+            owner TEXT NOT NULL,
+            name TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            default_branch TEXT,
+            description TEXT,
+            language TEXT,
+            stars INTEGER NOT NULL DEFAULT 0,
+            forks INTEGER NOT NULL DEFAULT 0,
+            pushed_at TEXT,
+            is_fork INTEGER NOT NULL DEFAULT 0,
+            is_archived INTEGER NOT NULL DEFAULT 0,
+            readme_content TEXT,
+            readme_sha TEXT,
+            metadata TEXT NOT NULL,
+            captured_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (owner, name)
+        );
+        CREATE TABLE repo_topics (
+            repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+            topic TEXT NOT NULL,
+            PRIMARY KEY (repo_id, topic)
+        );
+        PRAGMA user_version = 1;
+    """)
+    # Seed a row so we can confirm it survives the migration.
+    conn.execute(
+        "INSERT INTO repos (github_id, owner, name, full_name, url, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (42, "octocat", "hello", "octocat/hello", "https://x", "{}"),
+    )
+    conn.commit()
+    conn.close()
+
+    with Database(db_path) as db:
+        version = db.connection.execute("PRAGMA user_version").fetchone()[0]
+        assert version == 2
+        # notes table now exists
+        tables = {
+            row[0] for row in db.connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "notes" in tables
+        # Pre-existing repo rows survived
+        row = db.connection.execute(
+            "SELECT full_name FROM repos WHERE github_id = 42"
+        ).fetchone()
+        assert row["full_name"] == "octocat/hello"
+
+
+def test_v3_or_later_db_raises(db_path):
+    """A db at a future schema version still raises, just as v999 always did."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+    with pytest.raises(UnsupportedSchemaError):
+        Database(db_path)

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 __all__ = ["Database", "UnsupportedSchemaError"]
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """
 CREATE TABLE repos (
@@ -52,8 +52,33 @@ CREATE TABLE repo_topics (
 
 CREATE INDEX idx_repo_topics_topic ON repo_topics(topic);
 
-PRAGMA user_version = 1;
+CREATE TABLE notes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    content         TEXT NOT NULL,
+    annotation      TEXT,
+    source          TEXT,
+    source_locator  TEXT,
+    kind_hint       TEXT,
+    captured_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+PRAGMA user_version = 2;
 """
+
+_MIGRATIONS = {
+    2: """
+        CREATE TABLE notes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            content         TEXT NOT NULL,
+            annotation      TEXT,
+            source          TEXT,
+            source_locator  TEXT,
+            kind_hint       TEXT,
+            captured_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        PRAGMA user_version = 2;
+    """,
+}
 
 
 class UnsupportedSchemaError(Exception):
@@ -126,8 +151,11 @@ class Database:
         current = cur.fetchone()[0]
         if current == 0:
             self._conn.executescript(_SCHEMA_SQL)
-        elif current != _SCHEMA_VERSION:
+            return
+        if current > _SCHEMA_VERSION:
             raise UnsupportedSchemaError(
                 f"DB at {self._db_path} uses schema version {current}, "
                 f"but this library knows version {_SCHEMA_VERSION}."
             )
+        for v in range(current + 1, _SCHEMA_VERSION + 1):
+            self._conn.executescript(_MIGRATIONS[v])
