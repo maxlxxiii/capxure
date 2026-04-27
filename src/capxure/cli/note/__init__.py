@@ -20,6 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="subcommand", metavar="{add,ls}")
     capture.register(subparsers)
     ls.register(subparsers)
+    assert set(subparsers.choices) == set(_KNOWN_VERBS), (
+        f"_KNOWN_VERBS out of sync: parser has {set(subparsers.choices)}, "
+        f"constant has {set(_KNOWN_VERBS)}"
+    )
     return parser
 
 
