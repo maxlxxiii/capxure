@@ -95,3 +95,38 @@ def test_cli_help_exits_zero_and_mentions_cap():
     assert result.returncode == 0, result.stderr
     assert "cap" in result.stdout.lower()
     assert "capture" in result.stdout.lower()
+
+
+def test_help_mentions_note():
+    """`cap --help` lists `note` as an available subcommand."""
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(["--help"])
+    assert exc.value.code == 0
+
+
+def test_note_subcommand_dispatches(monkeypatch):
+    """`cap note ls` reaches the note-level dispatcher's ls handler."""
+    called = {"ls": False}
+
+    def fake_ls(args):
+        called["ls"] = True
+        return 0
+
+    monkeypatch.setattr("capxure.cli.note.ls.command", fake_ls)
+    code = main(["note", "ls"])
+    assert code == 0
+    assert called["ls"]
+
+
+def test_note_smart_dispatch_through_top_level(monkeypatch):
+    """`cap note "thought"` reaches the note-level add handler with content set."""
+    captured = {}
+
+    def fake_add(args):
+        captured["content"] = args.content
+        return 0
+
+    monkeypatch.setattr("capxure.cli.note.capture.command", fake_add)
+    code = main(["note", "a thought"])
+    assert code == 0
+    assert captured["content"] == "a thought"

@@ -6,7 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
-from capxure.cli import git
+from capxure.cli import git, note
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cap",
         description="capxure — capture and organize.",
     )
-    subparsers = parser.add_subparsers(dest="domain", metavar="{git}")
+    subparsers = parser.add_subparsers(dest="domain", metavar="{git,note}")
 
     git_parser = subparsers.add_parser(
         "git",
@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,  # Defer --help to the git-level parser.
     )
     git_parser.set_defaults(_domain="git")
+
+    note_parser = subparsers.add_parser(
+        "note",
+        help="Quick-capture notes (add, ls).",
+        add_help=False,  # Defer --help to the note-level parser.
+    )
+    note_parser.set_defaults(_domain="note")
 
     return parser
 
@@ -36,6 +43,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args_list[0] == "git":
         return git.main(args_list[1:])
+    if args_list[0] == "note":
+        return note.main(args_list[1:])
 
     # Anything else → argparse rejects with "invalid choice".
     build_parser().parse_args(args_list)
