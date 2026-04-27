@@ -120,3 +120,26 @@ def search_repos(
         }
         for h in hits
     ]
+
+
+def search_notes(
+    db: Database,
+    *,
+    query: str,
+    sources: list[str] | None = None,
+    k: int = 20,
+) -> list[dict[str, Any]]:
+    """FTS5 search over notes. Raises ValueError on empty query."""
+    hits = db.notes.search(query, sources=sources, k=k)
+    return [
+        {
+            "id": h.id,
+            "snippet": h.snippet,
+            "annotation": h.annotation,
+            "source": h.source,
+            "source_locator": h.source_locator,
+            "captured_at": h.captured_at,
+            "score": h.score,
+        }
+        for h in hits
+    ]

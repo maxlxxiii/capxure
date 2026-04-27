@@ -213,3 +213,45 @@ def test_search_repos_passes_topic_filter(db_path):
         result = tools.search_repos(db, query="lib", topics=["rust"])
     assert len(result) == 1
     assert result[0]["name"] == "a"
+
+
+# --- search_notes ---
+
+def test_search_notes_returns_hit_dicts(db_path):
+    with Database(db_path) as db:
+        db.notes.add("matching content here",
+                     annotation="annot",
+                     source="karpathy",
+                     source_locator="loc/x")
+        result = tools.search_notes(db, query="matching")
+    assert len(result) == 1
+    hit = result[0]
+    assert set(hit.keys()) == {
+        "id", "snippet", "annotation", "source",
+        "source_locator", "captured_at", "score",
+    }
+    assert hit["source"] == "karpathy"
+    assert hit["annotation"] == "annot"
+
+
+def test_search_notes_empty_query_raises(db_path):
+    with Database(db_path) as db:
+        with pytest.raises(ValueError):
+            tools.search_notes(db, query="   ")
+
+
+def test_search_notes_clamps_k(db_path):
+    with Database(db_path) as db:
+        for i in range(5):
+            db.notes.add(f"common term n{i}", source="src")
+        result = tools.search_notes(db, query="common", k=999)
+    assert len(result) == 5
+
+
+def test_search_notes_passes_sources_filter(db_path):
+    with Database(db_path) as db:
+        db.notes.add("matching", source="karpathy")
+        db.notes.add("matching", source="lex")
+        result = tools.search_notes(db, query="matching", sources=["lex"])
+    assert len(result) == 1
+    assert result[0]["source"] == "lex"

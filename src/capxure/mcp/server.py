@@ -99,4 +99,21 @@ def build_server(db_path: Path | None = None) -> tuple[FastMCP, Database]:
             db, query=query, topics=topics, language=language, k=k,
         )
 
+    @app.tool()
+    def search_notes(
+        query: str,
+        sources: list[str] | None = None,
+        k: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search captured notes by content + annotation + source (FTS5).
+
+        Plain words work; FTS5 operators are accepted. BM25 weights source 8x,
+        annotation 3x, content 1x — notes attributed to a source rank above
+        notes that just mention it.
+
+        `sources` (list, OR'd, case-insensitive exact match against notes.source)
+        composes with the text query. `k` defaults to 20, capped at 100.
+        """
+        return tools.search_notes(db, query=query, sources=sources, k=k)
+
     return app, db
