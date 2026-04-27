@@ -413,7 +413,13 @@ class RepoStore:
         sql_parts.append("ORDER BY score ASC LIMIT ?")
         params.append(k)
 
-        rows = self.connection.execute(" ".join(sql_parts), params).fetchall()
+        try:
+            rows = self.connection.execute(" ".join(sql_parts), params).fetchall()
+        except sqlite3.OperationalError as exc:
+            msg = str(exc)
+            if "fts5: syntax error" in msg or "unterminated string" in msg:
+                raise ValueError(f"invalid FTS5 query: {exc}") from exc
+            raise
         return [
             RepoHit(
                 owner=row["owner"],

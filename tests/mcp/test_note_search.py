@@ -95,3 +95,11 @@ def test_hit_shape(db_path):
     assert h.source == "karpathy"
     assert h.source_locator == "some/loc"
     assert h.captured_at == note.captured_at
+
+
+def test_malformed_fts5_query_raises_value_error(db_path):
+    """Malformed FTS5 syntax surfaces as ValueError, not opaque OperationalError."""
+    with Database(db_path) as db:
+        db.notes.add("hello", source="src")
+        with pytest.raises(ValueError, match="invalid FTS5 query"):
+            db.notes.search('"unclosed')

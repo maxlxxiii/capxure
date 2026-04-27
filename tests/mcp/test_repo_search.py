@@ -188,3 +188,11 @@ def test_hit_includes_metadata_fields(db_path):
     assert h.language == "Python"
     assert h.stars == 42
     assert h.description == "cool tool"
+
+
+def test_malformed_fts5_query_raises_value_error(db_path):
+    """Malformed FTS5 syntax surfaces as ValueError, not opaque OperationalError."""
+    with Database(db_path) as db:
+        _insert_repo(db, github_id=1, owner="o", name="r", readme="hello")
+        with pytest.raises(ValueError, match="invalid FTS5 query"):
+            db.repos.search('foo AND')  # incomplete operator
