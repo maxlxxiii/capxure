@@ -6,7 +6,7 @@ import argparse
 import sys
 from typing import Sequence
 
-from capxure.cli import git, note
+from capxure.cli import git, mcp, note
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cap",
         description="capxure — capture and organize.",
     )
-    subparsers = parser.add_subparsers(dest="domain", metavar="{git,note}")
+    subparsers = parser.add_subparsers(dest="domain", metavar="{git,mcp,note}")
 
     git_parser = subparsers.add_parser(
         "git",
@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,  # Defer --help to the git-level parser.
     )
     git_parser.set_defaults(_domain="git")
+
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="Run capxure as a stdio MCP server.",
+        add_help=False,  # Defer --help to the mcp-level parser.
+    )
+    mcp_parser.set_defaults(_domain="mcp")
 
     note_parser = subparsers.add_parser(
         "note",
@@ -43,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args_list[0] == "git":
         return git.main(args_list[1:])
+    if args_list[0] == "mcp":
+        return mcp.main(args_list[1:])
     if args_list[0] == "note":
         return note.main(args_list[1:])
 
