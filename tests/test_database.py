@@ -184,3 +184,21 @@ def test_notes_and_repos_share_connection(db_path):
     """db.notes and db.repos operate on the same connection."""
     with Database(db_path) as db:
         assert db.notes.connection is db.repos.connection
+
+
+def test_exit_commits_pending_writes_so_a_second_connection_sees_them(db_path):
+    """Database.__exit__ must commit pending writes — the connection is opened with
+    isolation_level='' (implicit transactions), so without a commit on exit, writes
+    in one Database instance are invisible to a subsequent Database instance.
+
+    Pins the fix added in commit 8f48a96. Uses raw SQL so the test is independent
+    of NoteStore.add's commit semantics — if NoteStore later adds its own
+    `with self.connection:` block, this test still pins the Database-level contract.
+    """
+    with Database(db_path) as db:
+        db.connection.execute(
+            "INSERT INTO notes (content) VALUES (?)", ("smoke",)
+        )
+    with Database(db_path) as db2:
+        count = db2.connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0]
+    assert count == 1
