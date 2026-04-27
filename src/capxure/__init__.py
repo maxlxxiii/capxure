@@ -22,6 +22,7 @@ from capxure.git.store import (
     RepoStore,
     UpsertOutcome,
 )
+from capxure.note import Note, NoteStore
 
 __version__ = "0.4.0"
 
@@ -31,6 +32,8 @@ __all__ = [
     "DuplicateRepoNameError",
     "GitHubClient",
     "GitHubError",
+    "Note",
+    "NoteStore",
     "NotFoundError",
     "ProcessResult",
     "RateLimitExceededError",

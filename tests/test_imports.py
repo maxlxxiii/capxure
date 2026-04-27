@@ -10,6 +10,8 @@ EXPECTED_EXPORTS = {
     "DuplicateRepoNameError",
     "GitHubClient",
     "GitHubError",
+    "Note",
+    "NoteStore",
     "NotFoundError",
     "ProcessResult",
     "RateLimitExceededError",
